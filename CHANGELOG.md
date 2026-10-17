@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.38 – Mumble-Empfang standardmäßig hörbar
+
+- PC-User hört empfangenes Mumble-Audio nach dem Verbinden automatisch
+- bisheriger Schalter „Mumble-Audio lokal wiedergeben“ war missverständlich
+- neuer Schalter heißt „Mumble-Empfang stummschalten“
+- Standard ist nicht stumm
+- Ausgabegerät bleibt separat wählbar
+- bestehende alte playback_enabled-Einstellung wird bewusst nicht als Mute übernommen
+- verhindert, dass ein altes „aus“ nach dem Update weiterhin unbemerkt den Empfang abschaltet
+- Mikrofon-Mithören/Test ist weiterhin bewusst nicht mit dem Empfangsschalter vermischt
+
 ## 0.2.37 – Vollständige offizielle Mumble-Serverliste
 
 - öffentliche Serverliste verwendet jetzt die offizielle Mumble-Quelle publist.mumble.info/v1/list
