@@ -21,7 +21,8 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QTabWidget, QGroupBox, QFormLayout,
     QCheckBox, QScrollArea, QPlainTextEdit, QLineEdit, QDoubleSpinBox, QSpinBox,
     QInputDialog, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QTreeWidget, QTreeWidgetItem, QFileDialog, QMenu, QDialog
+    QAbstractItemView, QTreeWidget, QTreeWidgetItem, QFileDialog, QMenu, QDialog,
+    QSlider, QDialogButtonBox
 )
 
 from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
@@ -2715,14 +2716,8 @@ class MainWindow(QMainWindow):
 
     def _mumble_user_volume_changed(self, value):
         name = self.mumble_user_volume_select.currentData()
-        if not name:
-            return
-        self.mumble_native.set_user_playback_volume(name, value)
-        key = self.mumble_native.volume_key(name)
-        if value == 100:
-            self._mumble_user_volumes.pop(key, None)
-        else:
-            self._mumble_user_volumes[key] = int(value)
+        if name:
+            self._set_mumble_user_volume(name, value)
 
     def _mumble_native_status_changed(self, text):
         if hasattr(self, "mumble_native_status_label"):
@@ -2890,6 +2885,69 @@ class MainWindow(QMainWindow):
                 states.append("🔒🎧 taub")
         return "  ".join(states) if states else "—"
 
+    def _mumble_user_volume_dialog(self, participant):
+        """Per-user playback gain popup, with live preview and cancel rollback."""
+        name = str(participant.get("name") or "").strip()
+        if not name or not self.mumble_native.connected:
+            return
+        original = self.mumble_native.user_playback_volume(name)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Mumble-Lautstärke – " + name)
+        dialog.setMinimumWidth(400)
+        layout = QVBoxLayout(dialog)
+        title = QLabel("Lokale Lautstärke für: " + name)
+        title.setWordWrap(True)
+        layout.addWidget(title)
+        hint = QLabel(
+            "Nur die Wiedergabe in FunkGateway wird geändert. "
+            "Andere Teilnehmer und die Weiterleitung zum Funkgerät sind nicht betroffen."
+        )
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        adjust = QHBoxLayout()
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(0, 200)
+        slider.setSingleStep(5)
+        slider.setPageStep(10)
+        slider.setValue(original)
+        value = QSpinBox()
+        value.setRange(0, 200)
+        value.setSuffix(" %")
+        value.setValue(original)
+        slider.valueChanged.connect(value.setValue)
+        value.valueChanged.connect(slider.setValue)
+        def preview(percent):
+            self._set_mumble_user_volume(name, percent)
+        value.valueChanged.connect(preview)
+        adjust.addWidget(slider, 1)
+        adjust.addWidget(value)
+        layout.addLayout(adjust)
+        reset = QPushButton("Auf 100 % zurücksetzen")
+        reset.clicked.connect(lambda: value.setValue(100))
+        layout.addWidget(reset)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._save_config()
+        else:
+            self._set_mumble_user_volume(name, original)
+
+    def _set_mumble_user_volume(self, name, percent):
+        self.mumble_native.set_user_playback_volume(name, percent)
+        key = self.mumble_native.volume_key(name)
+        if int(percent) == 100:
+            self._mumble_user_volumes.pop(key, None)
+        else:
+            self._mumble_user_volumes[key] = int(percent)
+        if self.mumble_user_volume_select.currentData() == name:
+            self.mumble_user_volume.blockSignals(True)
+            self.mumble_user_volume.setValue(int(percent))
+            self.mumble_user_volume.blockSignals(False)
+
     def _mumble_user_context_menu(self, participant, global_pos):
         if not isinstance(participant, dict):
             return
@@ -2922,6 +2980,9 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Mumble", str(exc))
             return
 
+        volume_action = menu.addAction(
+            f"🔊 Lautstärke einstellen … ({self.mumble_native.user_playback_volume(participant.get('name', ''))} %)"
+        )
         local_action = menu.addAction(
             "🔊 Lokale Stummschaltung aufheben"
             if participant.get("local_user_mute")
@@ -2949,7 +3010,9 @@ class MainWindow(QMainWindow):
         if chosen is None:
             return
         try:
-            if chosen == local_action:
+            if chosen == volume_action:
+                self._mumble_user_volume_dialog(participant)
+            elif chosen == local_action:
                 self.mumble_native.set_user_local_mute(
                     session, not bool(participant.get("local_user_mute"))
                 )
