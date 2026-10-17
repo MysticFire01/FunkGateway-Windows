@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.12 Portable Preview**
+**0.1.13 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.12\
+FunkGateway-Windows-0.1.13\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -139,3 +139,11 @@ silent output on Windows drivers that accept but do not properly render 8 kHz.
 From 0.1.12 the updater passes PowerShell arguments to `cmd.exe start`
 individually instead of pre-combining them into one quoted command string.
 This avoids Windows interpreting the helper command as a UNC/network path.
+
+
+## Audio output test
+
+From 0.1.13 the FRN panel has an **Audio output test** button. It plays a short
+tone through exactly the selected Windows output device using that device's
+default sample rate. RX/TX meters also return to idle after about 0.8 seconds
+without fresh samples instead of freezing on the last value.
