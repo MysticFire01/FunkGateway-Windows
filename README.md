@@ -370,3 +370,17 @@ TeamSpeak process detection now uses PowerShell Get-Process instead of parsing
 localized tasklist output. If TeamSpeak remains alive in the tray/background
 after a normal window close, FunkGateway can terminate that remaining process
 after explicit confirmation and only then launch the plugin installer.
+
+
+## UI levels 0.2.18
+
+Windows now separates operator complexity from operating modes. The four modes
+(PC user, radio gateway, radio parrot and VoIP parrot) remain available at all
+times.
+
+- Simple: core operator controls, hiding tuning and diagnostics.
+- Full: all regular production functions without pure simulation helpers.
+- Developer: Full plus Dry-PTT and no-output PTT simulation.
+
+WASAPI system audio remains a regular advanced production feature because it can
+intentionally route VLC, browser or soundboard audio to radio.
