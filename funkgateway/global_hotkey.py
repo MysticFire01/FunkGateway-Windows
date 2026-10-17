@@ -15,11 +15,15 @@ class GlobalPttHotkey(QObject):
         super().__init__(parent)
         self._listener = None
         self._hotkey = ""
+        self._wanted_tokens = frozenset()
         self._pressed = set()
         self._active = False
 
     def set_hotkey(self, text: str):
         self._hotkey = str(text or "").strip()
+        self._wanted_tokens = frozenset(
+            part.strip() for part in self._hotkey.split("+") if part.strip()
+        )
         self._active = False
         self._pressed.clear()
 
@@ -58,7 +62,7 @@ class GlobalPttHotkey(QObject):
             )
             listener.daemon = True
             listener.start()
-            time.sleep(0.08)
+            time.sleep(0.02)
             if not listener.is_alive():
                 raise RuntimeError("Tastatur-Listener wurde unmittelbar beendet")
             self._listener = listener
@@ -108,14 +112,14 @@ class GlobalPttHotkey(QObject):
         return ""
 
     def _wanted(self):
-        return {part.strip() for part in self._hotkey.split("+") if part.strip()}
+        return self._wanted_tokens
 
     def _on_press(self, key):
         token = self._token(key)
         if not token:
             return
         self._pressed.add(token)
-        wanted = self._wanted()
+        wanted = self._wanted_tokens
         if wanted and wanted.issubset(self._pressed) and not self._active:
             self._active = True
             self.pressed.emit()
@@ -124,6 +128,6 @@ class GlobalPttHotkey(QObject):
         token = self._token(key)
         if token:
             self._pressed.discard(token)
-        if self._active and not self._wanted().issubset(self._pressed):
+        if self._active and not self._wanted_tokens.issubset(self._pressed):
             self._active = False
             self.released.emit()
