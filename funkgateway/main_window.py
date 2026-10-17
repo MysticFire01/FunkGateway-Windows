@@ -575,7 +575,56 @@ class MainWindow(QMainWindow):
         cf.addRow("", self.dtmf_note)
         cf.addRow("", self.dtmf_last_digit)
         cf.addRow("Status:", self.dtmf_status)
+        preset_note = QLabel(
+            "Linux-Standardcodes (vorbelegt): *91# Papagei EIN, *90# VoIP-Betrieb; "
+            "TeamSpeak *51# MUTE, *52# UNMUTE, *53# DEAF, *54# UNDEAF; "
+            "Mumble *61# MUTE, *62# UNMUTE, *63# DEAF, *64# UNDEAF. "
+            "Diese zusätzlichen Linux-Befehle sind unter Windows noch nicht ausführbar."
+        )
+        preset_note.setWordWrap(True)
+        cf.addRow("Linux-Standards:", preset_note)
         tabs.addTab(commands, "Befehle")
+
+        simulator = QWidget()
+        sim_form = QFormLayout(simulator)
+        info = QLabel(
+            "Offline-Simulation: kein Gateway-Start, keine Netzwerkaktion und keine "
+            "Hardware-PTT. Authentifizierung wird wie beim Funkempfang geprüft. "
+            "Ein verwendeter TOTP-Code kann danach nicht nochmals verwendet werden."
+        )
+        info.setWordWrap(True)
+        self.dtmf_sim_selection = QComboBox()
+        for label, value in (
+            ("Gateway starten (*CODE*1#)", "1"),
+            ("Gateway stoppen (*CODE*0#)", "0"),
+            ("NOT-AUS / PTT AUS (*CODE*9#)", "9"),
+            ("Papagei EIN (*91#) – Linux-Vorbelegung", "*91#"),
+            ("Normaler VoIP-Betrieb (*90#) – Linux-Vorbelegung", "*90#"),
+            ("TeamSpeak MUTE (*51#) – Linux-Vorbelegung", "*51#"),
+            ("TeamSpeak UNMUTE (*52#) – Linux-Vorbelegung", "*52#"),
+            ("TeamSpeak DEAF (*53#) – Linux-Vorbelegung", "*53#"),
+            ("TeamSpeak UNDEAF (*54#) – Linux-Vorbelegung", "*54#"),
+            ("Mumble MUTE (*61#) – Linux-Vorbelegung", "*61#"),
+            ("Mumble UNMUTE (*62#) – Linux-Vorbelegung", "*62#"),
+            ("Mumble DEAF (*63#) – Linux-Vorbelegung", "*63#"),
+            ("Mumble UNDEAF (*64#) – Linux-Vorbelegung", "*64#"),
+        ):
+            self.dtmf_sim_selection.addItem(label, value)
+        self.dtmf_sim_code = QLineEdit()
+        self.dtmf_sim_code.setEchoMode(QLineEdit.EchoMode.Password)
+        self.dtmf_sim_code.setMaxLength(12)
+        self.dtmf_sim_code.setPlaceholderText("PIN oder 6-stelliger Authenticator-Code")
+        self.dtmf_sim_result = QLabel("Simulation bereit – Sender bleibt aus")
+        self.dtmf_sim_result.setWordWrap(True)
+        btn = QPushButton("Befehl simulieren (ohne Funk)")
+        btn.clicked.connect(self._simulate_dtmf)
+        self.dtmf_sim_code.returnPressed.connect(self._simulate_dtmf)
+        sim_form.addRow("", info)
+        sim_form.addRow("Standardfunktion:", self.dtmf_sim_selection)
+        sim_form.addRow("PIN / TOTP:", self.dtmf_sim_code)
+        sim_form.addRow("", btn)
+        sim_form.addRow("Ergebnis:", self.dtmf_sim_result)
+        tabs.addTab(simulator, "Simulation")
 
         auth = QWidget()
         af = QFormLayout(auth)
@@ -3585,6 +3634,51 @@ class MainWindow(QMainWindow):
         if hasattr(self, "dtmf_status"):
             self.dtmf_status.setText(str(text))
 
+    def _authenticate_dtmf_code(self, code):
+        """Shared live/simulated authenticator with attempt limiting and replay protection."""
+        now = time.monotonic()
+        if now < self._dtmf_locked_until:
+            return False, "Vorübergehend gesperrt – bitte später erneut versuchen"
+        valid = (self._verify_dtmf_totp(code)
+                 if self.dtmf_auth_method.currentData() == "totp"
+                 else self._dtmf_pin_valid(code))
+        if not valid:
+            self._dtmf_failed_attempts += 1
+            if self._dtmf_failed_attempts >= self.dtmf_max_attempts.value():
+                self._dtmf_locked_until = now + self.dtmf_lockout_seconds.value()
+                self._dtmf_failed_attempts = 0
+                return False, "Falscher/benutzter Code – Sperrzeit gestartet"
+            return False, "Falscher, abgelaufener oder bereits benutzter Code"
+        self._dtmf_failed_attempts = 0
+        return True, "Authentifizierung erfolgreich"
+
+    def _simulate_dtmf(self):
+        """Dry-run only: never dispatch gateway, VoIP or PTT actions."""
+        code = self.dtmf_sim_code.text().strip()
+        self.dtmf_sim_code.clear()
+        choice = str(self.dtmf_sim_selection.currentData() or "")
+        if choice.startswith("*"):
+            self.dtmf_sim_result.setText(
+                "Linux-Standardcode " + choice +
+                " erkannt. Diese Funktion ist unter Windows noch nicht portiert. "
+                "Nur Simulation – nichts geschaltet."
+            )
+            return
+        if not code.isdigit():
+            self.dtmf_sim_result.setText("Bitte zuerst PIN oder TOTP-Ziffern eingeben.")
+            return
+        if not (self._dtmf_pin_hash or self._dtmf_totp_secret):
+            self.dtmf_sim_result.setText("Bitte zunächst PIN oder TOTP einrichten.")
+            return
+        valid, detail = self._authenticate_dtmf_code(code)
+        action = {"1": "Gateway starten", "0": "Gateway stoppen",
+                  "9": "NOT-AUS / PTT AUS"}.get(choice, "Unbekannt")
+        self.dtmf_sim_result.setText(
+            ("OK: " if valid else "ABGELEHNT: ") + detail +
+            (" · " + action + " simuliert – keine PTT, keine Hardwareaktion."
+             if valid else " · Nichts geschaltet.")
+        )
+
     def _dtmf_command_received(self, sequence):
         if not self.dtmf_decoder.enabled:
             return
@@ -3602,19 +3696,10 @@ class MainWindow(QMainWindow):
             self.dtmf_status.setText("DTMF: ungültiges Befehlsformat")
             return
         pin, command = parts
-        if time.monotonic() < self._dtmf_locked_until:
-            self.dtmf_status.setText("DTMF: nach Fehlversuchen vorübergehend gesperrt")
-            return
-        valid = (self._verify_dtmf_totp(pin) if self.dtmf_auth_method.currentData() == "totp"
-                 else self._dtmf_pin_valid(pin))
+        valid, auth_message = self._authenticate_dtmf_code(pin)
         if not valid:
-            self._dtmf_failed_attempts += 1
-            if self._dtmf_failed_attempts >= self.dtmf_max_attempts.value():
-                self._dtmf_locked_until = time.monotonic() + self.dtmf_lockout_seconds.value()
-                self._dtmf_failed_attempts = 0
-            self.dtmf_status.setText("DTMF: Authentifizierung fehlgeschlagen")
+            self.dtmf_status.setText("DTMF: " + auth_message)
             return
-        self._dtmf_failed_attempts = 0
 
         if command == "0":
             self.dtmf_status.setText("DTMF: Gateway stoppen")
