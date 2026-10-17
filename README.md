@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.1 Portable Preview**
+**0.1.2 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.1\
+FunkGateway-Windows-0.1.2\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -33,6 +33,13 @@ FunkGateway-Windows-0.1.1\
 ```
 
 No FunkGateway configuration is written to `%APPDATA%` in the portable build.
+
+## Update-safe configuration
+
+Release ZIP files never contain a `config.json`. The application creates
+`config\\config.json` itself when settings are first saved. Therefore a newer
+ZIP can be extracted over an existing portable installation without overwriting
+the user's existing configuration.
 This makes it suitable for running directly from an external HDD/SSD or USB drive.
 
 ## Important preview note
