@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.47 – Mumble-Zertifikate exportieren
+
+- ausgewähltes Mumble-Zertifikat kann jetzt wieder exportiert werden
+- zwei Exportformate:
+  - PEM Zertifikat + privater Schlüssel
+  - P12/PFX als einzelne Datei
+- Export-Ordner wird über eine Ordnerauswahl gewählt
+- voreingestellt ist der portable FunkGateway-Ordner config/mumble_certificates
+- PEM-Export erkennt, wenn genau der interne Zertifikatsordner gewählt wurde, und kopiert nicht unnötig über dieselben Dateien
+- P12/PFX-Export kann optional mit Passwort geschützt werden
+- Export bleibt vollständig portabel und benötigt keine externe OpenSSL-Installation
+
 ## 0.2.46 – Release-Version wird jetzt aus der fertigen EXE geprüft
 
 - behebt den Versionsfehler des Releases 0.2.45:
