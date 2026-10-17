@@ -1300,15 +1300,43 @@ class MainWindow(QMainWindow):
         return None
 
     def _teamspeak_process_names(self):
-        return ("ts3client_win64.exe", "ts3client_win32.exe")
+        # Known TeamSpeak 3 Windows client process names. Keep this list broad
+        # enough for older/newer builds and installer naming variations.
+        return (
+            "ts3client_win64.exe",
+            "ts3client_win32.exe",
+            "ts3client.exe",
+            "teamspeak.exe",
+            "teamspeak3.exe",
+        )
 
     def _teamspeak_running(self):
         if os.name != "nt":
             return False
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+        # First use tasklist with exact image names; this works independently
+        # of PowerShell policy/settings.
+        for name in self._teamspeak_process_names():
+            try:
+                result = subprocess.run(
+                    ["tasklist", "/FI", f"IMAGENAME eq {name}", "/FO", "CSV", "/NH"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    creationflags=creationflags,
+                )
+                out = (result.stdout or "").lower()
+                if f'"{name.lower()}"' in out:
+                    return True
+            except Exception:
+                pass
+
+        # Fallback: ask PowerShell for any process whose executable name looks
+        # like a TeamSpeak 3 client.
         script = (
-            "$p = Get-Process -Name ts3client_win64,ts3client_win32 "
-            "-ErrorAction SilentlyContinue; "
+            "$p=Get-Process -ErrorAction SilentlyContinue | "
+            "Where-Object { $_.ProcessName -match '^(ts3client|teamspeak3?|team\\s?speak)' }; "
             "if ($p) { exit 0 } else { exit 1 }"
         )
         try:
@@ -1369,9 +1397,29 @@ class MainWindow(QMainWindow):
         if os.name != "nt":
             return True
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+        # Primary forced shutdown: use Windows taskkill for every known TS3
+        # executable name. /T also closes child processes belonging to it.
+        for name in self._teamspeak_process_names():
+            try:
+                subprocess.run(
+                    ["taskkill", "/IM", name, "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    creationflags=creationflags,
+                )
+            except Exception:
+                pass
+
+        if not self._teamspeak_running():
+            return True
+
+        # Fallback for installations with an unexpected TeamSpeak process name.
         script = (
-            "Get-Process -Name ts3client_win64,ts3client_win32 "
-            "-ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue"
+            "Get-Process -ErrorAction SilentlyContinue | "
+            "Where-Object { $_.ProcessName -match '^(ts3client|teamspeak3?|team\\s?speak)' } | "
+            "Stop-Process -Force -ErrorAction SilentlyContinue"
         )
         try:
             subprocess.run(
@@ -1383,7 +1431,8 @@ class MainWindow(QMainWindow):
             )
         except Exception:
             pass
-        deadline = time.monotonic() + 5.0
+
+        deadline = time.monotonic() + 6.0
         while time.monotonic() < deadline:
             if not self._teamspeak_running():
                 return True
@@ -1426,11 +1475,14 @@ class MainWindow(QMainWindow):
             self.ui_log.appendPlainText("TeamSpeak wurde für das Plugin-Update zwangsweise beendet.")
             return True
 
+        self.ui_log.appendPlainText(
+            "TeamSpeak Plugin: TS3-Prozess nach normalem und erzwungenem Beenden noch aktiv."
+        )
         QMessageBox.critical(
             self,
             "TeamSpeak Plugin",
-            "TeamSpeak konnte nicht beendet werden.\n"
-            "Die Plugin-Installation wird aus Sicherheitsgründen nicht gestartet."
+            "TeamSpeak konnte auch nach dem erzwungenen Beenden nicht beendet werden.\n\n"
+            "Bitte TeamSpeak im Task-Manager schließen und die Plugin-Installation danach erneut starten."
         )
         return False
 
