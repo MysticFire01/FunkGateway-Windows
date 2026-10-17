@@ -384,3 +384,17 @@ times.
 
 WASAPI system audio remains a regular advanced production feature because it can
 intentionally route VLC, browser or soundboard audio to radio.
+
+
+## Integration UI levels and TS3 recovery 0.2.19
+
+The three UI levels now also apply to FRN and TeamSpeak. Simple keeps the
+operator-facing controls required for normal use, Full exposes regular
+configuration/maintenance, and Developer adds protocol/diagnostic controls.
+
+The native TeamSpeak bridge plugin is now version 0.1.2. FunkGateway sends an
+explicit bridge reset when arming it, and a watchdog checks the plugin while the
+gateway is running. If TeamSpeak or the plugin disappears and later returns,
+the bridge is automatically re-armed without restarting the whole gateway.
+Plugin-side state is cleared on TeamSpeak disconnect so old Continuous
+Transmission state cannot leak into a new connection.
