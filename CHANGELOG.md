@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.21 – Plugin-Update nicht mehr durch TeamSpeak-Helferprozesse blockiert
+
+- Sicherheitsprüfung orientiert sich jetzt primär am echten TeamSpeak-Client
+- FunkGateway prüft TS3-Plugin-Erreichbarkeit und ClientQuery statt nur Prozessnamen
+- sobald Plugin und ClientQuery weg sind, gilt die Plugin-DLL als entladen
+- verbleibende Launcher-/Updater-/Helferprozesse blockieren die Installation dann nicht mehr
+- erzwungenes Beenden wird nur noch angeboten, wenn Client/Plugin tatsächlich weiter aktiv sind
+- reduziert Fehlalarme wie „TeamSpeak konnte nicht beendet werden“, obwohl das Hauptprogramm bereits geschlossen ist
+
 ## 0.2.20 – TeamSpeak vor Plugin-Update zuverlässig beenden
 
 - robustere Erkennung laufender TeamSpeak-3-Prozesse
