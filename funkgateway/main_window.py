@@ -73,6 +73,7 @@ class MainWindow(QMainWindow):
         self.ts_last_channel = None
         self.ts_last_server = None
         self.ts_channels = []
+        self._ts_channel_selection_dirty = False
         self.ts_commander_state = False
         self._ts_plugin_offer_checked = False
         self._ts_plugin_last_reachable = None
@@ -473,6 +474,7 @@ class MainWindow(QMainWindow):
 
         self.ts_channel_select = QComboBox()
         self.ts_channel_select.setMinimumWidth(280)
+        self.ts_channel_select.activated.connect(self._ts_channel_user_selected)
         self.ts_commander = QCheckBox("Channel Commander")
         self.ts_commander.toggled.connect(self._set_ts_commander)
 
@@ -1897,6 +1899,11 @@ class MainWindow(QMainWindow):
             self.status_ts.setText("TeamSpeak: nicht verbunden")
             QMessageBox.warning(self, "TeamSpeak ClientQuery", str(exc))
 
+    def _ts_channel_user_selected(self, *_args):
+        # Keep a deliberate user selection stable while the 750 ms TeamSpeak
+        # poller continues updating status in the background.
+        self._ts_channel_selection_dirty = True
+
     def _refresh_ts_channels(self):
         if not self.ts_enabled.isChecked():
             return
@@ -1914,6 +1921,7 @@ class MainWindow(QMainWindow):
                 if idx >= 0:
                     self.ts_channel_select.setCurrentIndex(idx)
             self.ts_channel_select.blockSignals(False)
+            self._ts_channel_selection_dirty = False
             self.ui_log.appendPlainText(
                 f"TeamSpeak: {len(channels)} Channel geladen."
             )
@@ -1930,6 +1938,7 @@ class MainWindow(QMainWindow):
         self._configure_teamspeak()
         try:
             self.ts_client.move_self(int(cid))
+            self._ts_channel_selection_dirty = False
             self._poll_teamspeak(force=True)
         except Exception as exc:
             QMessageBox.warning(self, "TeamSpeak Channel-Wechsel", str(exc))
@@ -1977,6 +1986,7 @@ class MainWindow(QMainWindow):
                 self.ts_channel_label.setText("—")
                 self.ts_speakers_label.setText("—")
             self.status_ts.setText("TeamSpeak: aus")
+            self._ts_channel_selection_dirty = False
             return
 
         self._configure_teamspeak()
@@ -2006,7 +2016,7 @@ class MainWindow(QMainWindow):
                 + (f" · {channel}" if channel else "")
             )
 
-            if cid:
+            if cid and not self._ts_channel_selection_dirty:
                 idx = self.ts_channel_select.findData(int(cid))
                 if idx >= 0 and self.ts_channel_select.currentIndex() != idx:
                     self.ts_channel_select.blockSignals(True)
@@ -2036,6 +2046,7 @@ class MainWindow(QMainWindow):
             if force or self.ts_last_status is not False:
                 self.ui_log.appendPlainText("TeamSpeak: " + msg)
             self.ts_last_status = False
+            self._ts_channel_selection_dirty = False
 
     # --------------------------------------------------------------- updates
     def _build_update_menu(self):
