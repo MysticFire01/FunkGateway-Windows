@@ -18,25 +18,52 @@ except Exception:
 
 
 def _prepare_opus_search_path():
-    """Make the bundled libopus visible before opuslib/pymumble imports."""
+    """Make and preload the bundled Opus DLL before opuslib/pymumble imports."""
     roots = []
     try:
         roots.append(Path(sys.executable).resolve().parent)
     except Exception:
         pass
     try:
-        roots.append(Path(getattr(sys, "_MEIPASS", "")).resolve())
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            roots.append(Path(meipass).resolve())
     except Exception:
         pass
+
+    # PyInstaller --onedir normally stores support files below _internal.
+    extra = []
+    for root in list(roots):
+        extra.append(root / "_internal")
+    roots.extend(extra)
+
+    seen = set()
     for root in roots:
-        if not root or not root.exists():
+        try:
+            root = root.resolve()
+        except Exception:
             continue
+        if root in seen or not root.exists():
+            continue
+        seen.add(root)
         try:
             if os.name == "nt":
                 os.add_dll_directory(str(root))
         except Exception:
             pass
         os.environ["PATH"] = str(root) + os.pathsep + os.environ.get("PATH", "")
+
+        if os.name == "nt":
+            for dll_name in ("opus.dll", "libopus-0.dll"):
+                dll = root / dll_name
+                if dll.exists():
+                    try:
+                        import ctypes
+                        ctypes.WinDLL(str(dll))
+                        return str(dll)
+                    except Exception:
+                        pass
+    return ""
 
 
 _prepare_opus_search_path()
