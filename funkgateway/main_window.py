@@ -7,7 +7,7 @@ from PySide6.QtCore import QTimer, QObject, QThread, Signal, Qt
 from PySide6.QtWidgets import (
     QMainWindow, QApplication, QMessageBox, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QComboBox, QTabWidget, QGroupBox, QFormLayout,
-    QCheckBox, QScrollArea, QPlainTextEdit
+    QCheckBox, QScrollArea, QPlainTextEdit, QLineEdit
 )
 
 from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
@@ -16,6 +16,7 @@ from .global_hotkey import GlobalPttHotkey
 from .hotkeys import LocalPttHotkey, ModifierHoldWatcher
 from .integrations.frn_panel import FrnPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
+from .ptt import DryPTT, SerialPTT, serial_ports
 
 
 class UpdateWorker(QObject):
@@ -56,6 +57,8 @@ class MainWindow(QMainWindow):
         self._ptt_pressed = False
         self._ptt_started = None
         self._current_mode = "pc"
+        self.gateway_ptt = None
+        self.gateway_started = False
 
         self._build_update_menu()
         self._build_shell()
@@ -99,16 +102,17 @@ class MainWindow(QMainWindow):
         self.ident_main_btn = self._big("Rufzeichen jetzt senden")
         self.frn_ptt_btn = self._big("FRN PTT")
 
-        self.start_main_btn.setEnabled(False)
+        self.start_main_btn.clicked.connect(self._start_gateway_ptt)
+        self.stop_main_btn.clicked.connect(self._stop_gateway_ptt)
         self.stop_main_btn.setEnabled(False)
         self.ident_main_btn.setEnabled(False)
-        self.start_main_btn.setToolTip("Der Windows-Gateway-Audiokern wird als nächster Schritt portiert.")
-        self.stop_main_btn.setToolTip("Der Windows-Gateway-Audiokern wird als nächster Schritt portiert.")
+        self.start_main_btn.setToolTip("Initialisiert die Gateway-PTT-Grundfunktion. Audio-Routing folgt separat.")
+        self.stop_main_btn.setToolTip("Löst PTT und schließt den Gateway-PTT-Ausgang.")
         self.ident_main_btn.setToolTip("Rufzeichen-/ID-Funktion wird mit dem Windows-Gateway-Audiokern portiert.")
         self.emergency_main_btn.setStyleSheet("font-weight: bold;")
         self.emergency_main_btn.clicked.connect(self._emergency)
-        self.frn_ptt_btn.pressed.connect(self._frn_button_pressed)
-        self.frn_ptt_btn.released.connect(self._frn_button_released)
+        self.frn_ptt_btn.pressed.connect(self._main_ptt_pressed)
+        self.frn_ptt_btn.released.connect(self._main_ptt_released)
 
         for button in (
             self.start_main_btn, self.stop_main_btn, self.emergency_main_btn,
@@ -232,20 +236,53 @@ class MainWindow(QMainWindow):
     def _build_ptt(self):
         page = QWidget()
         v = QVBoxLayout(page)
-        title = QLabel("<h2>PTT / Modem</h2><p>PTT-Steuerung und Sicherheitsfunktionen.</p>")
+        title = QLabel("<h2>PTT / Modem</h2><p>Plattformübergreifende Gateway-PTT-Grundfunktion.</p>")
         title.setWordWrap(True)
         v.addWidget(title)
-        box = QGroupBox("FRN PTT")
-        f = QFormLayout(box)
-        f.addRow("Status:", QLabel("Lokaler/systemweiter Hotkey, Hold/Latch und TX-Zeitlimit sind aktiv."))
-        f.addRow("Globale Taste:", QLabel("Konfiguration unter Integrationen → FRN → Audio / PTT"))
-        v.addWidget(box)
-        hw = QGroupBox("Funkhardware")
+
+        hw = QGroupBox("Gateway PTT")
         hf = QFormLayout(hw)
-        hf.addRow("Seriell / CM108:", QLabel("Windows-Port folgt als nächster PTT-Schritt"))
-        hf.addRow("NOT-AUS:", QLabel("Die globale Taste oben beendet FRN-PTT bereits jetzt sofort."))
+        self.gateway_ptt_backend = QComboBox()
+        self.gateway_ptt_backend.addItem("Test-PTT (keine Hardware)", "dry")
+        self.gateway_ptt_backend.addItem("Seriell RTS / DTR", "serial")
+
+        self.gateway_ptt_port = QComboBox()
+        self.gateway_ptt_port.setEditable(True)
+        self.gateway_ptt_line = QComboBox()
+        self.gateway_ptt_line.addItems(["RTS", "DTR"])
+        self.gateway_ptt_invert = QCheckBox("PTT-Logik invertieren")
+        self.gateway_ptt_status = QLabel("Gateway PTT: nicht gestartet")
+        self.gateway_ptt_status.setWordWrap(True)
+
+        refresh = QPushButton("Serielle Ports neu laden")
+        refresh.clicked.connect(self._refresh_gateway_ptt_ports)
+        test = QPushButton("PTT halten zum Testen")
+        test.pressed.connect(self._gateway_ptt_press)
+        test.released.connect(self._gateway_ptt_release)
+
+        hf.addRow("Backend:", self.gateway_ptt_backend)
+        hf.addRow("Port:", self.gateway_ptt_port)
+        hf.addRow("", refresh)
+        hf.addRow("Leitung:", self.gateway_ptt_line)
+        hf.addRow("", self.gateway_ptt_invert)
+        hf.addRow("Status:", self.gateway_ptt_status)
+        hf.addRow("", test)
         v.addWidget(hw)
+
+        frn = QGroupBox("FRN PTT")
+        ff = QFormLayout(frn)
+        ff.addRow("Status:", QLabel("Lokaler/systemweiter Hotkey, Hold/Latch und TX-Zeitlimit bleiben aktiv."))
+        ff.addRow("Konfiguration:", QLabel("Integrationen → FRN → Audio / PTT"))
+        v.addWidget(frn)
+
+        note = QLabel(
+            "Serielle RTS/DTR-PTT verwendet unter Windows COM-Ports und unter Linux /dev/tty*-Ports. "
+            "Beim Start und Stop wird PTT aus Sicherheitsgründen immer zuerst gelöst."
+        )
+        note.setWordWrap(True)
+        v.addWidget(note)
         v.addStretch(1)
+        self._refresh_gateway_ptt_ports()
         self._scroll_tab(page, "PTT / Modem")
 
     def _build_integrations(self):
@@ -385,7 +422,15 @@ class MainWindow(QMainWindow):
             "voip_parrot": "VoIP-Papagei: VoIP-Aufnahme und Rückgabe. Windows-Portierung läuft.",
         }
         self.mode_note.setText(descriptions.get(mode, ""))
-        self.frn_ptt_btn.setVisible(mode == "pc")
+        if mode == "pc":
+            self.frn_ptt_btn.setText("FRN PTT")
+            self.frn_ptt_btn.setEnabled(True)
+        elif mode in ("gateway", "radio_parrot"):
+            self.frn_ptt_btn.setText("Gateway PTT")
+            self.frn_ptt_btn.setEnabled(self.gateway_started)
+        else:
+            self.frn_ptt_btn.setText("PTT")
+            self.frn_ptt_btn.setEnabled(False)
 
         palette = getattr(self, "current_theme_palette", {}) or {}
         color = MODE_COLORS.get(mode, palette.get("accent", "#2F80ED")) if self.mode_colors.isChecked() else palette.get("accent", "#2F80ED")
@@ -453,6 +498,110 @@ class MainWindow(QMainWindow):
             self.local_hotkey.set_hotkey(hotkey)
         self.frn_panel.set_ptt_hotkey_status("lokal aktiv")
 
+    def _refresh_gateway_ptt_ports(self):
+        current = self.gateway_ptt_port.currentText().strip() if hasattr(self, "gateway_ptt_port") else ""
+        self.gateway_ptt_port.clear()
+        for port in serial_ports():
+            self.gateway_ptt_port.addItem(port)
+        if current:
+            idx = self.gateway_ptt_port.findText(current)
+            if idx >= 0:
+                self.gateway_ptt_port.setCurrentIndex(idx)
+            else:
+                self.gateway_ptt_port.setEditText(current)
+
+    def _make_gateway_ptt(self):
+        backend = self.gateway_ptt_backend.currentData()
+        if backend == "dry":
+            return DryPTT()
+        return SerialPTT(
+            self.gateway_ptt_port.currentText().strip(),
+            self.gateway_ptt_line.currentText(),
+            self.gateway_ptt_invert.isChecked(),
+        )
+
+    def _start_gateway_ptt(self):
+        if self._mode() not in ("gateway", "radio_parrot"):
+            self.status_ptt.setText("PTT: Gateway-PTT nur in Funk-Gateway/Funk-Papagei")
+            return
+        self._stop_gateway_ptt(silent=True)
+        try:
+            self.gateway_ptt = self._make_gateway_ptt()
+            self.gateway_ptt.key(False)
+            self.gateway_started = True
+            self.gateway_ptt_status.setText("Gateway PTT: bereit")
+            self.status_ptt.setText("PTT: Gateway bereit")
+            self.start_main_btn.setEnabled(False)
+            self.stop_main_btn.setEnabled(True)
+            self.frn_ptt_btn.setEnabled(True)
+            self._update_live_status()
+        except Exception as exc:
+            self.gateway_ptt = None
+            self.gateway_started = False
+            self.gateway_ptt_status.setText("Gateway PTT: Fehler – " + str(exc))
+            QMessageBox.critical(self, "Gateway PTT", str(exc))
+
+    def _stop_gateway_ptt(self, silent=False):
+        ptt = self.gateway_ptt
+        self.gateway_ptt = None
+        self.gateway_started = False
+        if ptt is not None:
+            try:
+                ptt.key(False)
+            except Exception:
+                pass
+            try:
+                ptt.close()
+            except Exception:
+                pass
+        if hasattr(self, "gateway_ptt_status"):
+            self.gateway_ptt_status.setText("Gateway PTT: gestoppt")
+        if hasattr(self, "status_ptt"):
+            self.status_ptt.setText("PTT: bereit")
+        if hasattr(self, "start_main_btn"):
+            self.start_main_btn.setEnabled(True)
+            self.stop_main_btn.setEnabled(False)
+        if hasattr(self, "frn_ptt_btn") and self._mode() != "pc":
+            self.frn_ptt_btn.setEnabled(False)
+        if not silent:
+            self._update_live_status()
+
+    def _gateway_ptt_press(self):
+        if not self.gateway_started or self.gateway_ptt is None:
+            self.gateway_ptt_status.setText("Gateway PTT: zuerst Gateway starten")
+            return
+        try:
+            self.gateway_ptt.key(True)
+            self.gateway_ptt_status.setText("Gateway PTT: EIN")
+            self.status_ptt.setText("PTT: SENDEN")
+            self._update_live_status()
+        except Exception as exc:
+            self._emergency()
+            QMessageBox.critical(self, "Gateway PTT", str(exc))
+
+    def _gateway_ptt_release(self):
+        if self.gateway_ptt is None:
+            return
+        try:
+            self.gateway_ptt.key(False)
+        except Exception:
+            pass
+        self.gateway_ptt_status.setText("Gateway PTT: bereit")
+        self.status_ptt.setText("PTT: Gateway bereit")
+        self._update_live_status()
+
+    def _main_ptt_pressed(self):
+        if self._mode() == "pc":
+            self._frn_button_pressed()
+        elif self._mode() in ("gateway", "radio_parrot"):
+            self._gateway_ptt_press()
+
+    def _main_ptt_released(self):
+        if self._mode() == "pc":
+            self._frn_button_released()
+        elif self._mode() in ("gateway", "radio_parrot"):
+            self._gateway_ptt_release()
+
     def _frn_button_pressed(self):
         if not self.frn_panel.connected:
             return
@@ -515,6 +664,11 @@ class MainWindow(QMainWindow):
             self.frn_panel.ptt(False, force=True)
         except Exception:
             pass
+        try:
+            if self.gateway_ptt is not None:
+                self.gateway_ptt.key(False)
+        except Exception:
+            pass
         self._ptt_pressed = False
         self._ptt_started = None
         self.status_ptt.setText("PTT: NOT-AUS ausgelöst")
@@ -531,7 +685,10 @@ class MainWindow(QMainWindow):
             "radio_parrot": "Funk-Papagei", "voip_parrot": "VoIP-Papagei",
         }
         frn = "verbunden" if getattr(self.frn_panel, "connected", False) else "getrennt"
-        tx = "TX" if getattr(self.frn_panel, "ptt_active", False) else "PTT aus"
+        if self._mode() == "pc":
+            tx = "TX" if getattr(self.frn_panel, "ptt_active", False) else "PTT aus"
+        else:
+            tx = "Gateway PTT bereit" if self.gateway_started else "Gateway PTT aus"
         self.live_status_bar.setText(
             f"{mode_names.get(self._mode(), 'PC-User')}  ·  FRN {frn}  ·  {tx}  ·  "
             "Windows-Port 0.2"
@@ -626,6 +783,15 @@ class MainWindow(QMainWindow):
             if pos >= 0:
                 self.color_scheme.setCurrentIndex(pos)
             self.mode_colors.setChecked(bool(ui.get("mode_colors", True)))
+            ptt_cfg = data.get("ptt", {})
+            idx = self.gateway_ptt_backend.findData(ptt_cfg.get("backend", "dry"))
+            if idx >= 0:
+                self.gateway_ptt_backend.setCurrentIndex(idx)
+            self.gateway_ptt_port.setEditText(str(ptt_cfg.get("port", "")))
+            idx = self.gateway_ptt_line.findText(str(ptt_cfg.get("line", "RTS")))
+            if idx >= 0:
+                self.gateway_ptt_line.setCurrentIndex(idx)
+            self.gateway_ptt_invert.setChecked(bool(ptt_cfg.get("invert", False)))
         except Exception as exc:
             self.frn_panel._log("Konfiguration konnte nicht geladen werden: " + str(exc))
 
@@ -639,6 +805,12 @@ class MainWindow(QMainWindow):
                 "theme": self.theme_mode.currentText(),
                 "scheme": self.color_scheme.currentText(),
                 "mode_colors": self.mode_colors.isChecked(),
+            },
+            "ptt": {
+                "backend": self.gateway_ptt_backend.currentData(),
+                "port": self.gateway_ptt_port.currentText().strip(),
+                "line": self.gateway_ptt_line.currentText(),
+                "invert": self.gateway_ptt_invert.isChecked(),
             },
         }
         CFG_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -656,6 +828,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.frn_panel.disconnect_frn()
+        except Exception:
+            pass
+        try:
+            self._stop_gateway_ptt(silent=True)
         except Exception:
             pass
         try:
