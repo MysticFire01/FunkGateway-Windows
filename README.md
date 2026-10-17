@@ -225,3 +225,12 @@ FRN is integrated under Integrationen together with prepared TeamSpeak and Mumbl
 pages. Linux theme support is shared with the Windows port. TeamSpeak/Mumble
 backends and Windows radio/audio hardware routing are the next implementation
 steps.
+
+
+## Gateway PTT 0.2.1
+
+Windows now contains the same small cross-platform PTT abstraction used by the
+gateway design: a safe dry/test backend and serial RTS/DTR through pyserial.
+Serial device names may be Windows COM ports or Linux /dev/tty* paths. The
+gateway start/stop controls initialize and release PTT safely; audio routing is
+implemented separately.
