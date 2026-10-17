@@ -2677,6 +2677,53 @@ class MainWindow(QMainWindow):
         self.mumble_chat_target.setCurrentIndex(index if index >= 0 else 0)
         self.mumble_chat_target.blockSignals(False)
 
+    def _audio_tx_volume_changed(self, value):
+        self.tx_audio_engine.set_output_volume(value)
+
+    def _mumble_playback_volume_changed(self, value):
+        self.mumble_native.set_playback_volume(value)
+
+    def _refresh_mumble_user_volume_list(self, participants):
+        if not hasattr(self, "mumble_user_volume_select"):
+            return
+        previous = self.mumble_user_volume_select.currentData()
+        self.mumble_user_volume_select.blockSignals(True)
+        self.mumble_user_volume_select.clear()
+        self.mumble_user_volume_select.addItem("Benutzer auswählen …", None)
+        seen = set()
+        for item in participants:
+            if item.get("is_self"):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name or name.casefold() in seen:
+                continue
+            seen.add(name.casefold())
+            self.mumble_user_volume_select.addItem(name, name)
+        idx = self.mumble_user_volume_select.findData(previous)
+        self.mumble_user_volume_select.setCurrentIndex(idx if idx >= 0 else 0)
+        self.mumble_user_volume_select.blockSignals(False)
+        self._mumble_user_volume_selected()
+
+    def _mumble_user_volume_selected(self, *_args):
+        name = self.mumble_user_volume_select.currentData()
+        self.mumble_user_volume.blockSignals(True)
+        self.mumble_user_volume.setEnabled(name is not None)
+        self.mumble_user_volume.setValue(
+            self.mumble_native.user_playback_volume(name) if name else 100
+        )
+        self.mumble_user_volume.blockSignals(False)
+
+    def _mumble_user_volume_changed(self, value):
+        name = self.mumble_user_volume_select.currentData()
+        if not name:
+            return
+        self.mumble_native.set_user_playback_volume(name, value)
+        key = self.mumble_native.volume_key(name)
+        if value == 100:
+            self._mumble_user_volumes.pop(key, None)
+        else:
+            self._mumble_user_volumes[key] = int(value)
+
     def _mumble_native_status_changed(self, text):
         if hasattr(self, "mumble_native_status_label"):
             self.mumble_native_status_label.setText(str(text))
