@@ -272,6 +272,7 @@ class MainWindow(QMainWindow):
         self._build_setup()
         self._build_audio()
         self._build_ptt()
+        self._build_protection()
         self._build_integrations()
         self._build_appearance()
         self._build_log()
@@ -491,47 +492,6 @@ class MainWindow(QMainWindow):
         hf.addRow("", test)
         v.addWidget(hw)
 
-        safety = QGroupBox("Gateway Schutzfunktionen")
-        sf = QFormLayout(safety)
-        self.gateway_safety_enabled = QCheckBox("Schutzfunktionen aktiv")
-        self.gateway_safety_enabled.setChecked(True)
-
-        self.gateway_tot = QSpinBox()
-        self.gateway_tot.setRange(10, 900)
-        self.gateway_tot.setValue(180)
-        self.gateway_tot.setSuffix(" s")
-
-        self.gateway_min_pause = QSpinBox()
-        self.gateway_min_pause.setRange(0, 10000)
-        self.gateway_min_pause.setSingleStep(100)
-        self.gateway_min_pause.setValue(1200)
-        self.gateway_min_pause.setSuffix(" ms")
-
-        self.gateway_return_guard = QSpinBox()
-        self.gateway_return_guard.setRange(0, 5000)
-        self.gateway_return_guard.setSingleStep(50)
-        self.gateway_return_guard.setValue(900)
-        self.gateway_return_guard.setSuffix(" ms")
-
-        self.gateway_rx_confirm = QSpinBox()
-        self.gateway_rx_confirm.setRange(0, 1000)
-        self.gateway_rx_confirm.setSingleStep(20)
-        self.gateway_rx_confirm.setValue(100)
-        self.gateway_rx_confirm.setSuffix(" ms")
-
-        self.gateway_safety_status = QLabel(
-            "Schutz bereit · TOT, Mindestpause und Rücklaufschutz"
-        )
-        self.gateway_safety_status.setWordWrap(True)
-
-        sf.addRow("", self.gateway_safety_enabled)
-        sf.addRow("Maximale TX-Dauer (TOT):", self.gateway_tot)
-        sf.addRow("Mindestpause nach TX:", self.gateway_min_pause)
-        sf.addRow("Rücklaufschutz / Plopp-Sperre:", self.gateway_return_guard)
-        sf.addRow("RX muss stabil anliegen:", self.gateway_rx_confirm)
-        sf.addRow("Status:", self.gateway_safety_status)
-        v.addWidget(safety)
-
         dtmf = QGroupBox("DTMF Fernsteuerung")
         df = QFormLayout(dtmf)
         self.dtmf_enabled = QCheckBox("DTMF-Steuerung aktiv")
@@ -572,6 +532,78 @@ class MainWindow(QMainWindow):
         v.addStretch(1)
         self._refresh_gateway_ptt_ports()
         self._scroll_tab(page, "PTT / Modem")
+
+    def _build_protection(self):
+        """Linux-style protection tabs; reuse the existing Windows safety controls."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        tabs = QTabWidget()
+        layout.addWidget(tabs)
+
+        safety = QGroupBox("Gateway Schutzfunktionen")
+        sf = QFormLayout(safety)
+        self.gateway_safety_enabled = QCheckBox("Schutzfunktionen aktiv")
+        self.gateway_safety_enabled.setChecked(True)
+
+        self.gateway_tot = QSpinBox()
+        self.gateway_tot.setRange(10, 900)
+        self.gateway_tot.setValue(180)
+        self.gateway_tot.setSuffix(" s")
+
+        self.gateway_min_pause = QSpinBox()
+        self.gateway_min_pause.setRange(0, 10000)
+        self.gateway_min_pause.setSingleStep(100)
+        self.gateway_min_pause.setValue(1200)
+        self.gateway_min_pause.setSuffix(" ms")
+
+        self.gateway_return_guard = QSpinBox()
+        self.gateway_return_guard.setRange(0, 5000)
+        self.gateway_return_guard.setSingleStep(50)
+        self.gateway_return_guard.setValue(900)
+        self.gateway_return_guard.setSuffix(" ms")
+
+        self.gateway_rx_confirm = QSpinBox()
+        self.gateway_rx_confirm.setRange(0, 1000)
+        self.gateway_rx_confirm.setSingleStep(20)
+        self.gateway_rx_confirm.setValue(100)
+        self.gateway_rx_confirm.setSuffix(" ms")
+
+        self.gateway_safety_status = QLabel(
+            "Schutz bereit · TOT, Mindestpause und Rücklaufschutz"
+        )
+        self.gateway_safety_status.setWordWrap(True)
+
+        sf.addRow("", self.gateway_safety_enabled)
+        sf.addRow("Maximale TX-Dauer (TOT):", self.gateway_tot)
+        sf.addRow("Mindestpause nach TX:", self.gateway_min_pause)
+        sf.addRow("Rücklaufschutz / Plopp-Sperre:", self.gateway_return_guard)
+        sf.addRow("RX muss stabil anliegen:", self.gateway_rx_confirm)
+        sf.addRow("Status:", self.gateway_safety_status)
+
+        general = QWidget()
+        form = QFormLayout(general)
+        form.addRow("", self.gateway_safety_enabled)
+        form.addRow("Maximale TX-Dauer (TOT):", self.gateway_tot)
+        form.addRow("Mindestpause nach TX:", self.gateway_min_pause)
+        form.addRow("RX muss stabil anliegen:", self.gateway_rx_confirm)
+        form.addRow("Status:", self.gateway_safety_status)
+        tabs.addTab(general, "Allgemein")
+
+        return_page = QWidget()
+        return_form = QFormLayout(return_page)
+        return_form.addRow("Rücklaufschutz / Plopp-Sperre:", self.gateway_return_guard)
+        return_note = QLabel("Erweiterte Linux-Rücklauferkennung mit Zähler und Eskalation ist noch nicht portiert.")
+        return_note.setWordWrap(True)
+        return_form.addRow("", return_note)
+        tabs.addTab(return_page, "Selbstrücklauf")
+
+        announcements = QWidget()
+        announcement_form = QFormLayout(announcements)
+        note = QLabel("Schutzansagen per WAV sind unter Windows noch nicht implementiert.")
+        note.setWordWrap(True)
+        announcement_form.addRow("", note)
+        tabs.addTab(announcements, "Ansagen")
+        self._scroll_tab(page, "Schutz")
 
     def _build_integrations(self):
         page = QWidget()
