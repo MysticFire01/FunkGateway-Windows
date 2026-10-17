@@ -903,8 +903,9 @@ class FrnNativeClient:
         value = self._pop_line(idx)
         self._extension_11_value = value
         self.signals.log.emit(f"FRN: Datentyp 11 (Eurogate): {value!r}")
-        self._set_state("IDLE")
+        self._set_state("RX_EXTENSION_11_PADDING")
         return True
+
     def _consume_list(self):
         progressed = False
         while True:
@@ -993,6 +994,17 @@ class FrnNativeClient:
             if self.state == "RX_EXTENSION_11":
                 if not self._consume_extension_11():
                     return
+                continue
+
+            if self.state == "RX_EXTENSION_11_PADDING":
+                # After datatype 11 Eurogate sends an additional blank CRLF.
+                # Do not skip a lone LF: it is valid FRN datatype 10.
+                if self.buf[0] == 13:
+                    if len(self.buf) == 1:
+                        return
+                    if self.buf[1] == 10:
+                        del self.buf[:2]
+                self._set_state("IDLE")
                 continue
 
             if self.state in ("RX_CLIENT_LIST", "RX_LIST"):
