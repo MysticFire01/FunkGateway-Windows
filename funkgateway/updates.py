@@ -5,12 +5,15 @@ import hashlib
 import json
 import os
 import re
+import ssl
 import subprocess
 import sys
 import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
+
+import certifi
 
 REPO_OWNER = "MysticFire01"
 REPO_NAME = "FunkGateway-Windows"
@@ -37,7 +40,8 @@ def _request(url: str, timeout=20):
             "User-Agent": "FunkGateway-Windows-Updater",
         },
     )
-    return urllib.request.urlopen(req, timeout=timeout)
+    context = ssl.create_default_context(cafile=certifi.where())
+    return urllib.request.urlopen(req, timeout=timeout, context=context)
 
 
 def fetch_latest_release(timeout=8):
