@@ -502,3 +502,12 @@ The import is validated before PyInstaller runs.
 The Windows build now uses the upstream `pymumble_py3` branch at pinned commit
 `8755c7d41b8f1f91402a6218c413121b64bdce33`. The previously assumed Git tag `1.6.1` does not exist in the
 upstream repository. Pinning the commit keeps the build reproducible.
+
+
+## Windows Opus runtime fix 0.2.30
+
+FunkGateway now ships both `libopus-0.dll` and an `opus.dll` alias. Before
+loading opuslib/pymumble, the Windows Mumble backend searches the executable
+directory and PyInstaller's `_internal` directory, adds them to the DLL search
+path and explicitly preloads the bundled Opus library. This avoids runtime
+failures where opuslib cannot resolve the codec library by name.
