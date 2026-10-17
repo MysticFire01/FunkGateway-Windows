@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.24 – Erster Windows-Mumble-Unterbau
+
+- Mumble-Untertab ist nicht mehr nur Platzhalter
+- erkennt laufenden Windows-Mumble-Prozess und Dateiversion
+- unterscheidet Legacy-Mumble (<1.4) und modernen Plugin/API-fähigen Client
+- Server, Port, optionaler Benutzer und Channel-Pfad konfigurierbar
+- Channel-Wechsel über den offiziellen mumble://-URL-Mechanismus
+- Mumble-Konfiguration wird gespeichert
+- Oberfläche berücksichtigt Vereinfacht/Voll/Entwickler
+- vorbereitet für spätere moderne Mumble-Plugin/API- und Audiointegration
+
 ## 0.2.23 – COM-Port als echtes Dropdown
 
 - PTT-COM-Port ist nicht mehr als editierbares Schreibfeld dargestellt
