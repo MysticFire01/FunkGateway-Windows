@@ -192,6 +192,11 @@ static void receiverLoop() {
         } else if (hdr->type == 3) {
             clearRing();
             g_pendingRestoreCT.store(true);
+        } else if (hdr->type == 4) {
+            static const char ack[] = "FGA1";
+            sendto(
+                g_socket, ack, static_cast<int>(sizeof(ack) - 1), 0,
+                reinterpret_cast<sockaddr*>(&from), fromLen);
         }
     }
 }
