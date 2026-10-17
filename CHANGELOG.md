@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 – Deutliche FRN-TX-Anzeige
+
+- FRN-PTT-Knopf leuchtet während einer echten Aussendung knallrot
+- Anzeige reagiert auf Mausklick, lokalen Hotkey, systemweiten Hotkey und Latch-PTT
+- nach TX-Ende kehrt der Knopf automatisch zum normalen PC-User-Theme zurück
+- bei Trennung wird die rote TX-Anzeige sicher zurückgesetzt
+
 ## 0.2.2 – Modusfarben und aufgeräumte Hauptleiste
 
 - aktive Haupt- und Unterreiter folgen jetzt der Betriebsartfarbe
