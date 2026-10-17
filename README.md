@@ -643,3 +643,18 @@ The public Mumble server browser now reports whether its data came from the
 official Mumble public-list service or from the known smaller fallback source.
 If the fallback is used, the UI clearly warns that the result is limited to
 roughly 50 entries instead of making the list look complete.
+
+
+## Mumble certificate + public-list hardening 0.2.43
+
+The Windows release is now rejected unless the finished packaged executable
+passes `FunkGateway-Windows.exe --self-test-cert`. The test exercises the same
+cryptography code path used for Mumble certificate creation, so missing native
+Rust bindings can no longer slip through a successful CI build.
+
+For reliability, PyInstaller now collects the cryptography package using its
+full package hook instead of manually placing only one guessed native module.
+
+The Mumble public server browser also reports whether the data came from the
+official `publist.mumble.info` service or from the much smaller fallback list.
+The official request now uses the current Mumble 1.5.939 release identifier.
