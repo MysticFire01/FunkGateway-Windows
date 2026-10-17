@@ -132,8 +132,14 @@ class AudioTxEngine(QObject):
         if on == self._active:
             return
         try:
+            accepted = True
             if self._ptt is not None:
-                self._ptt.key(on)
+                result = self._ptt.key(on)
+                if on and result is False:
+                    accepted = False
+            if on and not accepted:
+                self._active = False
+                return
             self._active = on
             self.activity.emit(on)
         except Exception as exc:
