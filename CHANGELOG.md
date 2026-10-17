@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.9 Portable Preview
+
+- Selbstupdater startet den externen Helfer über `cmd.exe start`
+- bisherige Python-`DETACHED_PROCESS`-Startmethode entfernt
+- verbessert Kompatibilität mit älteren Windows-10-Systemen
+- `logs\\update-launch.log` wird bereits vor dem Helferstart geschrieben
+- `logs\\update.log` bleibt das Log des eigentlichen Update-Helfers
+- Update-Shutdown-Timeout aus 0.1.8 bleibt erhalten
+- Mikrofon-Resampling und GSM-WAV49 bleiben enthalten
+
 ## 0.1.8 Portable Preview
 
 - Selbstupdater beendet FunkGateway über den normalen Fenster-Schließweg
