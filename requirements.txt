@@ -3,3 +3,7 @@ sounddevice>=0.4,<0.6
 pyserial>=3.5,<4
 pynput>=1.7,<2
 certifi>=2024.8.30
+
+pymumble==1.6.1
+opuslib==3.0.1
+protobuf==3.20.3
