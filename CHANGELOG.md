@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.44 – Zertifikatsmodul auf PyInstaller-stabile cryptography-Version gepinnt
+
+- cryptography auf 43.0.3 fest gepinnt
+- umgeht die fehlerhafte Runtime-Einbindung des neueren 45er-Rust-Bindings im aktuellen Windows-PyInstaller-Build
+- PyInstaller sammelt cryptography weiterhin vollständig ein
+- zwingender Selbsttest startet nach dem Build die fertige EXE mit --self-test-cert
+- Release wird nur erstellt, wenn die fertige EXE tatsächlich ein X.509-Zertifikat erzeugen und wieder einlesen kann
+- verhindert weitere Releases mit grünem Build, aber kaputter Zertifikatsfunktion
+
 ## 0.2.43 – Mumble Zertifikate wirklich im fertigen EXE testen
 
 - behebt den weiterhin auftretenden Fehler:
