@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.30 – Opus-DLL unter Windows zuverlässig laden
+
+- behebt „Could not find Opus library“
+- liefert libopus zusätzlich unter dem von opuslib erwarteten Namen opus.dll aus
+- FunkGateway sucht in Programmordner und _internal nach opus.dll/libopus-0.dll
+- Opus-DLL wird vor dem Import von opuslib/pymumble explizit mit WinDLL geladen
+- GitHub-Build validiert jetzt opus.dll direkt
+- beide DLL-Namen werden in das Windows-Release aufgenommen
+
 ## 0.2.29 – pymumble Upstream-Referenz korrigiert
 
 - behebt den fehlgeschlagenen Vendor-Schritt aus 0.2.28
