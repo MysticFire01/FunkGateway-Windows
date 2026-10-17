@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.40 – Mumble-Serverfavoriten
+
+- Mumble-Verbindungsseite erhält ein echtes Favoriten-Dropdown
+- erster Eintrag ist fest und nicht löschbar:
+  - Mumble-Funk Hauptserver
+  - voice.mumble-funk.de:64738
+- zusätzliche Start-Favoriten:
+  - FreiesFunkNetz – mumble.freiesfunknetz.com:64738
+  - RadioBunker / DN9LO – dn9lo.de:64738
+  - QSO4YOU – mumble.qso4you.com:64738
+- beliebig viele eigene Favoriten können hinzugefügt werden
+- eigene Favoriten können bearbeitet und gelöscht werden
+- Favoriten werden portabel in config.json gespeichert
+- Auswahl übernimmt Host und Port automatisch
+- ein Server aus der öffentlichen Serverliste wird automatisch einem Favoriten zugeordnet oder als manuell behandelt
+- nur der Mumble-Funk-Hauptserver ist dauerhaft geschützt
+
 ## 0.2.39 – Mumble Benutzer direkt im Channelbaum
 
 - Benutzer werden wie im normalen Mumble direkt unter ihrem Channel angezeigt
