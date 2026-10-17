@@ -476,9 +476,10 @@ class MainWindow(QMainWindow):
         self.local_hotkey.pressed.connect(self._hotkey_pressed)
         self.local_hotkey.released.connect(self._hotkey_released)
 
+        # Kept as an inert compatibility object; local PTT is handled directly
+        # by LocalPttHotkey for lower latency.
         self.modifier_watcher = ModifierHoldWatcher(self)
-        self.modifier_watcher.pressed.connect(self._hotkey_pressed)
-        self.modifier_watcher.released.connect(self._hotkey_released)
+        self.modifier_watcher.set_key("")
 
         self.global_hotkey = GlobalPttHotkey(self)
         self.global_hotkey.pressed.connect(self._hotkey_pressed)
@@ -502,11 +503,11 @@ class MainWindow(QMainWindow):
             if not self.global_hotkey.start():
                 self.frn_panel.set_ptt_hotkey_status("systemweit nicht verfügbar")
             return
-        if hotkey in ("Ctrl", "Alt", "AltGr", "Shift", "Meta"):
-            self.modifier_watcher.set_key(hotkey)
-        else:
-            self.local_hotkey.set_hotkey(hotkey)
-        self.frn_panel.set_ptt_hotkey_status("lokal aktiv")
+        # LocalPttHotkey is event-driven and also understands modifier-only
+        # keys. Avoid polling keyboardModifiers(), which can feel sluggish and
+        # may miss very short modifier presses.
+        self.local_hotkey.set_hotkey(hotkey)
+        self.frn_panel.set_ptt_hotkey_status("lokal aktiv · direkt/eventgesteuert")
 
     def _refresh_gateway_ptt_ports(self):
         current = self.gateway_ptt_port.currentText().strip() if hasattr(self, "gateway_ptt_port") else ""
