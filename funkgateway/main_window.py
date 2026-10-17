@@ -628,8 +628,7 @@ class MainWindow(QMainWindow):
         elif self.gateway_started:
             if self.tx_audio_enabled.isChecked():
                 self._start_tx_audio()
-            if self.ts_commander_auto.isChecked():
-                self._start_radio_rx_detector()
+            self._start_radio_rx_detector()
             if self.ts_audio_bridge_enabled.isChecked():
                 self._start_radio_audio_bridge()
         self._apply_mode()
@@ -1181,8 +1180,6 @@ class MainWindow(QMainWindow):
     def _start_radio_rx_detector(self):
         if self._mode() not in ("gateway", "radio_parrot"):
             return
-        if not hasattr(self, "ts_commander_auto") or not self.ts_commander_auto.isChecked():
-            return
         device = self.ts_rx_input.currentData()
         if device is None:
             self.ts_rx_state_label.setText("Funk-RX: kein Audioeingang gewählt")
@@ -1231,16 +1228,11 @@ class MainWindow(QMainWindow):
         self.ui_log.appendPlainText("Funk-RX Fehler: " + str(message))
 
     def _ts_commander_auto_changed(self, enabled):
+        # RX detection is independent from Channel Commander. This checkbox
+        # decides only whether detected Funk-RX is mirrored to Commander.
         self.ts_commander.setEnabled(not bool(enabled))
-        if enabled and self.gateway_started and self._mode() in ("gateway", "radio_parrot"):
-            self._start_radio_rx_detector()
-        else:
-            self._stop_radio_rx_detector()
-            if enabled is False and self.ts_commander_state:
-                # Manual state is controlled by the checkbox from here on.
-                return
-            if enabled and self.ts_commander_state:
-                self._set_ts_commander_state(False, "Automatik")
+        if not enabled and self.ts_commander_state:
+            self._set_ts_commander_state(False, "Funk-RX Automatik aus")
 
     # ------------------------------------------------------------ TeamSpeak
     def _configure_teamspeak(self):
