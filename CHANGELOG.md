@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.4 – Schnellere und robustere FRN-Hotkey-PTT
+
+- lokale PTT-Hotkeys reagieren jetzt vollständig ereignisgesteuert
+- einzelne Modifier wie Ctrl/Alt/Shift werden nicht mehr per 10-ms-Polling abgefragt
+- kurze Tastendrücke werden dadurch zuverlässiger erfasst
+- bei Fokusverlust wird eine lokale gehaltene PTT sicher gelöst
+- globale pynput-Kombination wird einmal gecacht statt bei jedem Tastaturereignis neu zerlegt
+- Listener-Startprüfung verkürzt; keine zusätzliche Verzögerung im laufenden Betrieb
+
 ## 0.2.3 – Deutliche FRN-TX-Anzeige
 
 - FRN-PTT-Knopf leuchtet während einer echten Aussendung knallrot
