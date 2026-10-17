@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import time
 
 from PySide6.QtCore import QTimer, QObject, QThread, Signal, Qt
@@ -19,7 +21,7 @@ from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contras
 from .ptt import DryPTT, SerialPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
 from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_devices
-from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge
+from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge, PLUGIN_VERSION as TS_PLUGIN_VERSION
 from .tx_audio import AudioTxEngine, SoundInputTxSource
 from .wasapi_loopback import WasapiSystemLoopbackSource
 
@@ -72,6 +74,7 @@ class MainWindow(QMainWindow):
         self.ts_last_server = None
         self.ts_channels = []
         self.ts_commander_state = False
+        self._ts_plugin_offer_checked = False
         self.radio_rx_detector = RadioRxDetector(self)
         self.radio_rx_detector.activity.connect(self._radio_rx_activity_changed)
         self.radio_rx_detector.level.connect(self._radio_rx_level_changed)
@@ -466,6 +469,8 @@ class MainWindow(QMainWindow):
         self.ts_audio_bridge_status = QLabel("Audio-Brücke: aus")
         self.ts_plugin_test = QPushButton("TS3-Plugin prüfen")
         self.ts_plugin_test.clicked.connect(self._probe_ts_plugin)
+        self.ts_plugin_install = QPushButton("TS3-Plugin installieren / aktualisieren")
+        self.ts_plugin_install.clicked.connect(lambda: self._offer_ts_plugin_install(force=True))
         self.ts_rx_threshold = QDoubleSpinBox()
         self.ts_rx_threshold.setRange(-80.0, -3.0)
         self.ts_rx_threshold.setDecimals(1)
@@ -517,6 +522,7 @@ class MainWindow(QMainWindow):
         tf.addRow("TeamSpeak Audio-Ausgang:", self.ts_audio_output)
         tf.addRow("", self.ts_audio_bridge_enabled)
         tf.addRow("", self.ts_plugin_test)
+        tf.addRow("", self.ts_plugin_install)
         tf.addRow("Audio-Brücke:", self.ts_audio_bridge_status)
         tf.addRow("RX-Schwellwert:", self.ts_rx_threshold)
         tf.addRow("RX-Nachlauf:", self.ts_rx_hang)
@@ -1114,6 +1120,120 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self.ts_audio_output.setCurrentIndex(idx)
 
+    @staticmethod
+    def _version_tuple(value):
+        parts = []
+        for part in str(value or "").strip().split("."):
+            try:
+                parts.append(int(part))
+            except Exception:
+                break
+        return tuple(parts or [0])
+
+    def _bundled_ts_plugin_path(self):
+        candidates = [
+            APP_DIR / "FunkGateway-Audio-Bridge.ts3_plugin",
+            APP_DIR / "_internal" / "FunkGateway-Audio-Bridge.ts3_plugin",
+        ]
+        for path in candidates:
+            if path.exists():
+                return path
+        return None
+
+    def _launch_ts_plugin_installer(self):
+        package = self._bundled_ts_plugin_path()
+        if package is None:
+            QMessageBox.warning(
+                self,
+                "TeamSpeak Plugin",
+                "Die mitgelieferte Datei FunkGateway-Audio-Bridge.ts3_plugin wurde nicht gefunden."
+            )
+            return False
+        try:
+            if os.name == "nt":
+                os.startfile(str(package))
+            else:
+                subprocess.Popen([str(package)])
+            self.ui_log.appendPlainText(
+                "TeamSpeak Plugin-Installer gestartet: " + str(package)
+            )
+            return True
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "TeamSpeak Plugin",
+                "Plugin-Installer konnte nicht gestartet werden:\n\n" + str(exc)
+            )
+            return False
+
+    def _offer_ts_plugin_install(self, force=False):
+        if not force and self._ts_plugin_offer_checked:
+            return
+        self._ts_plugin_offer_checked = True
+
+        package = self._bundled_ts_plugin_path()
+        if package is None:
+            if force:
+                QMessageBox.warning(
+                    self,
+                    "TeamSpeak Plugin",
+                    "Das mitgelieferte FunkGateway TeamSpeak-Plugin wurde nicht gefunden."
+                )
+            return
+
+        reachable = self.ts_plugin_bridge.probe()
+        installed = self.ts_plugin_bridge.plugin_version() if reachable else None
+        bundled = TS_PLUGIN_VERSION
+
+        if reachable and installed:
+            needs_update = self._version_tuple(installed) < self._version_tuple(bundled)
+        else:
+            needs_update = True
+
+        if not needs_update and not force:
+            return
+
+        if reachable and installed:
+            headline = (
+                f"Für FunkGateway ist ein neues TeamSpeak-Plugin verfügbar.\n\n"
+                f"Installierte Version: {installed}\n"
+                f"Mitgelieferte Version: {bundled}\n\n"
+            )
+        elif reachable:
+            headline = (
+                "Das installierte TeamSpeak-Plugin ist erreichbar, seine Version "
+                "konnte aber nicht bestimmt werden.\n\n"
+                f"Mitgelieferte Version: {bundled}\n\n"
+            )
+        else:
+            headline = (
+                "Das FunkGateway TeamSpeak-Plugin ist nicht erreichbar oder noch nicht installiert.\n\n"
+                f"Mitgelieferte Version: {bundled}\n\n"
+            )
+
+        if force and reachable and installed and not needs_update:
+            headline = (
+                f"Das TeamSpeak-Plugin ist bereits aktuell.\n\n"
+                f"Installierte Version: {installed}\n"
+                f"Mitgelieferte Version: {bundled}\n\n"
+                "Möchtest du es trotzdem neu installieren?\n\n"
+            )
+        else:
+            headline += (
+                "TeamSpeak muss nach der Installation/Aktualisierung neu gestartet werden.\n\n"
+                "Plugin jetzt installieren/aktualisieren?"
+            )
+
+        answer = QMessageBox.question(
+            self,
+            "FunkGateway TeamSpeak-Plugin",
+            headline,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self._launch_ts_plugin_installer()
+
     def _probe_ts_plugin(self):
         ok = self.ts_plugin_bridge.probe()
         if ok:
@@ -1430,6 +1550,9 @@ class MainWindow(QMainWindow):
             self.ts_last_status = True
             self.ts_last_channel = channel
             self.ts_last_speakers = list(speakers)
+
+            if not self._ts_plugin_offer_checked:
+                QTimer.singleShot(0, lambda: self._offer_ts_plugin_install(force=False))
 
             # PC-user mode: TeamSpeak's real local talking/PTT state is
             # authoritative for Channel Commander.
