@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.37 – Vollständige offizielle Mumble-Serverliste
+
+- öffentliche Serverliste verwendet jetzt die offizielle Mumble-Quelle publist.mumble.info/v1/list
+- beseitigt die bisherige Begrenzung auf 50 Gesamteinträge der mumble.com-Fallback-Liste
+- Ländergruppierung und alphabetische Sortierung bleiben erhalten
+- Live-UDP-Ping ergänzt weiterhin Benutzerzahl, Maximalnutzer und Ping
+- doppelte Host/Port-Einträge werden entfernt
+- bei Ausfall der offiziellen Quelle fällt FunkGateway automatisch auf die bisherige kleinere Liste zurück
+- aktueller Stand enthält weiterhin:
+  - eigenen lokalen/systemweiten Mumble-PTT-Hotkey unabhängig von FRN
+  - orangefarbenen Mund für eigenen TX
+  - roten Mund für fremde Sprecher
+  - blauen Mund für Whisper
+  - grünen Mund für schweigende Teilnehmer
+  - Channelbaum mit Live-Nutzerzahlen
+  - gezielten cryptography-_rust-Buildfix für Zertifikate
+
 ## 0.2.36 – Dark-Theme-Fix für Mumble-Listen
 
 - behebt helle/weiße Wechselzeilen in Mumble-Serverliste und Channelbaum
