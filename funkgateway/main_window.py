@@ -1344,10 +1344,13 @@ class MainWindow(QMainWindow):
         favlay.addWidget(self.mumble_favorite_edit_btn)
         favlay.addWidget(self.mumble_favorite_delete_btn)
         mf.addRow("Favoriten:", favrow)
+        self.mumble_favorite_nick_info = QLabel("Server-Benutzername: allgemeiner Mumble-Nickname")
+        self.mumble_favorite_nick_info.setWordWrap(True)
+        mf.addRow("", self.mumble_favorite_nick_info)
         mf.addRow("Server:", self.mumble_server)
         mf.addRow("Port:", self.mumble_port)
         mf.addRow("Start-Channel:", self.mumble_channel)
-        mf.addRow("Gateway-Nickname:", self.mumble_native_nick)
+        mf.addRow("Allgemeiner Gateway-Nickname:", self.mumble_native_nick)
         mf.addRow("Server-Passwort:", self.mumble_native_password)
         mf.addRow("", self.mumble_native_enabled)
         connrow = QWidget()
@@ -1970,7 +1973,7 @@ class MainWindow(QMainWindow):
                 self.mumble_server.text().strip(),
                 self.mumble_port.value(),
                 self.mumble_channel.text().strip(),
-                self.mumble_user.text().strip(),
+                self._effective_mumble_favorite_nick(self.mumble_user.text().strip()),
             )
             self.ui_log.appendPlainText("Mumble Channel-Link geöffnet: " + url)
             self.mumble_status_label.setText("Channel-Wechsel angefordert")
@@ -2001,6 +2004,17 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self.mumble_output.setCurrentIndex(idx)
 
+    def _effective_mumble_favorite_nick(self, fallback=""):
+        """A favorite override is only valid for its selected server and port."""
+        nickname = str(fallback or "").strip()
+        favorite = self.mumble_favorite_select.currentData()
+        if (isinstance(favorite, dict)
+                and str(favorite.get("host") or "").strip().casefold()
+                == self.mumble_server.text().strip().casefold()
+                and int(favorite.get("port") or 64738) == self.mumble_port.value()):
+            return str(favorite.get("username") or "").strip() or nickname
+        return nickname
+
     def _connect_mumble_native(self):
         if not self.mumble_native_enabled.isChecked():
             QMessageBox.information(
@@ -2016,13 +2030,9 @@ class MainWindow(QMainWindow):
             )
             return
 
-        nickname = self.mumble_native_nick.text().strip() or "FunkGateway Windows"
-        favorite = self.mumble_favorite_select.currentData()
-        if (isinstance(favorite, dict)
-                and str(favorite.get("host") or "").strip().casefold()
-                == self.mumble_server.text().strip().casefold()
-                and int(favorite.get("port") or 64738) == self.mumble_port.value()):
-            nickname = str(favorite.get("username") or "").strip() or nickname
+        nickname = self._effective_mumble_favorite_nick(
+            self.mumble_native_nick.text().strip() or "FunkGateway Windows"
+        )
         self.mumble_native_connect_btn.setEnabled(False)
         self.mumble_native_status_label.setText("Native Mumble: verbindet …")
         try:
