@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.23 – COM-Port als echtes Dropdown
+
+- PTT-COM-Port ist nicht mehr als editierbares Schreibfeld dargestellt
+- erkannte COM-Ports erscheinen als echte Dropdown-Auswahl
+- zusätzliche Option „Manuell …“ für Sonderfälle
+- manuell eingetragene Ports werden weiterhin gespeichert
+- verhindert Verwechslung zwischen Textfeld und Auswahlliste
+
 ## 0.2.22 – TeamSpeak Channel-Auswahl bleibt stehen
 
 - manuell gewählter TeamSpeak-Channel wird nicht mehr vom 750-ms-Poller zurückgesetzt
