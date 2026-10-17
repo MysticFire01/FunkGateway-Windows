@@ -5,6 +5,8 @@ import hashlib
 import hmac
 import io
 import json
+import threading
+import audioop
 import os
 import secrets
 import struct
@@ -104,6 +106,8 @@ class MainWindow(QMainWindow):
     """Windows shell aligned with the Linux FunkGateway 0.6 UI."""
 
     gatewaySafetyEvent = Signal(str, str)
+    parrotDone = Signal(int)
+    parrotError = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -120,6 +124,13 @@ class MainWindow(QMainWindow):
         self.gateway_ptt = None
         self.gateway_started = False
         self._last_dtmf_command_at = 0.0
+        self._parrot_chunks = []
+        self._parrot_recording = False
+        self._parrot_playing = False
+        self._parrot_last_sound = 0.0
+        self._parrot_duration = 0.0
+        self._parrot_rate = 48000
+        self._parrot_generation = 0
         self._dtmf_totp_secret = ""
         self._dtmf_totp_last_counter = -1
         self._dtmf_failed_attempts = 0
@@ -150,6 +161,7 @@ class MainWindow(QMainWindow):
         self._ts_plugin_watchdog_failures = 0
         self.radio_rx_detector = RadioRxDetector(self)
         self.radio_rx_detector.activity.connect(self._radio_rx_activity_changed)
+        self.radio_rx_detector.pcm.connect(self._parrot_radio_pcm)
         self.radio_rx_detector.level.connect(self._radio_rx_level_changed)
         self.radio_rx_detector.error.connect(self._radio_rx_error)
         self.radio_rx_active = False
@@ -159,6 +171,8 @@ class MainWindow(QMainWindow):
         self.dtmf_decoder.command.connect(self._dtmf_command_received)
         self.dtmf_decoder.status.connect(self._dtmf_status_changed)
         self.gatewaySafetyEvent.connect(self._gateway_safety_event)
+        self.parrotDone.connect(self._parrot_done)
+        self.parrotError.connect(self._parrot_error)
         self.radio_audio_bridge = RadioAudioBridge(self)
         self.radio_audio_bridge.error.connect(self._radio_bridge_error)
         self.radio_audio_bridge.state.connect(self._radio_bridge_state_changed)
@@ -176,6 +190,7 @@ class MainWindow(QMainWindow):
         self.mumble_native.radioRxActivity.connect(self._mumble_native_rx_activity_changed)
         self.mumble_native.radioRxLevel.connect(self._mumble_native_rx_level_changed)
         self.mumble_native.networkRxLevel.connect(self._mumble_native_network_rx_level_changed)
+        self.mumble_native.networkPcm.connect(self._parrot_voip_pcm)
         self.mumble_native.error.connect(self._mumble_native_error)
         self.tx_audio_source = SoundInputTxSource(self.tx_audio_engine, self)
         self.tx_wasapi_source = WasapiSystemLoopbackSource(
@@ -194,6 +209,10 @@ class MainWindow(QMainWindow):
         self._build_update_menu()
         self._build_shell()
         self._build_hotkeys()
+        self.parrot_timer = QTimer(self)
+        self.parrot_timer.setInterval(150)
+        self.parrot_timer.timeout.connect(self._parrot_tick)
+        self.parrot_timer.start()
 
         self.ptt_guard = QTimer(self)
         self.ptt_guard.setInterval(200)
@@ -382,6 +401,33 @@ class MainWindow(QMainWindow):
         vf.addRow("", self.ui_level_note)
         v.addWidget(view_box)
 
+        parrot = QGroupBox("Papagei – Aufnahme und Wiedergabe")
+        pf = QFormLayout(parrot)
+        self.parrot_threshold = QDoubleSpinBox()
+        self.parrot_threshold.setRange(-75, -5)
+        self.parrot_threshold.setValue(-35)
+        self.parrot_threshold.setSuffix(" dBFS")
+        self.parrot_silence_ms = QSpinBox()
+        self.parrot_silence_ms.setRange(300, 5000)
+        self.parrot_silence_ms.setValue(1200)
+        self.parrot_silence_ms.setSuffix(" ms")
+        self.parrot_pause_ms = QSpinBox()
+        self.parrot_pause_ms.setRange(200, 5000)
+        self.parrot_pause_ms.setValue(800)
+        self.parrot_pause_ms.setSuffix(" ms")
+        self.parrot_max_seconds = QSpinBox()
+        self.parrot_max_seconds.setRange(2, 120)
+        self.parrot_max_seconds.setValue(30)
+        self.parrot_max_seconds.setSuffix(" s")
+        self.parrot_status = QLabel("Papagei: bereit")
+        self.parrot_status.setWordWrap(True)
+        pf.addRow("Ansprechschwelle:", self.parrot_threshold)
+        pf.addRow("Sprechpause bis Aufnahmeende:", self.parrot_silence_ms)
+        pf.addRow("Pause vor Wiedergabe:", self.parrot_pause_ms)
+        pf.addRow("Maximale Aufnahmedauer:", self.parrot_max_seconds)
+        pf.addRow("Status:", self.parrot_status)
+        v.addWidget(parrot)
+
         wizard = QGroupBox("Einrichtungsassistent – Audio und PTT")
         wf = QFormLayout(wizard)
         description = QLabel("Schrittweise Audioeingang, Funk-Ausgang und PTT prüfen. Die Auswahl öffnet die vorhandenen Einstellungen; die Hardware wird nicht automatisch auf Sendung geschaltet.")
@@ -420,6 +466,131 @@ class MainWindow(QMainWindow):
             issues.append("Audioausgang auswählen.")
         text = "\\n".join(issues) if issues else "Audio- und PTT-Auswahl sind gesetzt. Bitte mit ausgeschaltetem Sender prüfen."
         QMessageBox.information(self, "Einrichtungsprüfung", text)
+
+    def _parrot_reset(self):
+        self._parrot_generation += 1
+        self._parrot_chunks.clear()
+        self._parrot_recording = False
+        self._parrot_playing = False
+        self._parrot_duration = 0.0
+        self._parrot_last_sound = 0.0
+        if hasattr(self, "parrot_status"):
+            self.parrot_status.setText("Papagei: bereit")
+
+    def _parrot_capture(self, pcm, rate, mode):
+        if self._mode() != mode or self._parrot_playing:
+            return
+        if mode == "radio_parrot" and not self.gateway_started:
+            return
+        if mode == "voip_parrot" and not self.mumble_native.connected:
+            return
+        if not pcm:
+            return
+        level = self.radio_rx_detector._dbfs(pcm)
+        threshold = self.parrot_threshold.value()
+        now = time.monotonic()
+        if level >= threshold:
+            if not self._parrot_recording:
+                self._parrot_chunks.clear()
+                self._parrot_duration = 0.0
+                self._parrot_recording = True
+                self._parrot_rate = rate
+            self._parrot_last_sound = now
+        if not self._parrot_recording:
+            return
+        if self._parrot_rate != rate:
+            return
+        duration = len(pcm) / (2 * rate)
+        if self._parrot_duration + duration > self.parrot_max_seconds.value():
+            self._parrot_recording = False
+            self._parrot_chunks.clear()
+            self.parrot_status.setText("Papagei: maximale Aufnahmedauer erreicht – verworfen")
+            return
+        self._parrot_chunks.append(bytes(pcm))
+        self._parrot_duration += duration
+        self.parrot_status.setText(f"Papagei: Aufnahme {self._parrot_duration:.1f} s")
+
+    def _parrot_radio_pcm(self, pcm, rate):
+        self._parrot_capture(pcm, int(rate), "radio_parrot")
+
+    def _parrot_voip_pcm(self, pcm):
+        self._parrot_capture(pcm, 48000, "voip_parrot")
+
+    def _parrot_tick(self):
+        if not self._parrot_recording or self._parrot_playing:
+            return
+        if time.monotonic() - self._parrot_last_sound < self.parrot_silence_ms.value() / 1000.0:
+            return
+        self._parrot_recording = False
+        if self._parrot_duration < 0.2:
+            self._parrot_chunks.clear()
+            return
+        chunks = self._parrot_chunks
+        self._parrot_chunks = []
+        rate = self._parrot_rate
+        mode = self._mode()
+        generation = self._parrot_generation
+        self._parrot_playing = True
+        self.parrot_status.setText(f"Papagei: Wiedergabe {self._parrot_duration:.1f} s")
+        QTimer.singleShot(self.parrot_pause_ms.value(), lambda: self._parrot_play(chunks, rate, mode, generation))
+
+    def _parrot_play(self, chunks, rate, mode, generation):
+        if generation != self._parrot_generation or self._mode() != mode:
+            return
+        if mode == "voip_parrot" and not self.mumble_native.connected:
+            self._parrot_reset()
+            return
+        if mode == "radio_parrot" and (not self.gateway_started or self.gateway_ptt is None):
+            self._parrot_reset()
+            return
+        def worker():
+            try:
+                if mode == "voip_parrot":
+                    state = None
+                    for chunk in chunks:
+                        if generation != self._parrot_generation or not self.mumble_native.connected:
+                            break
+                        if rate != 48000:
+                            chunk, state = audioop.ratecv(chunk, 2, 1, rate, 48000, state)
+                        self.mumble_native.send_parrot_pcm(chunk)
+                        time.sleep(len(chunk) / (2 * 48000))
+                else:
+                    import sounddevice as sd
+                    output = self.tx_audio_output.currentData()
+                    if output is None:
+                        raise RuntimeError("Funk-TX Ausgang fehlt")
+                    device = sd.query_devices(output, "output")
+                    out_rate = int(round(float(device.get("default_samplerate") or 48000)))
+                    with sd.RawOutputStream(samplerate=out_rate, channels=1, dtype="int16", device=output) as stream:
+                        keyed = self.gateway_ptt.key(True)
+                        if keyed is False:
+                            raise RuntimeError("PTT-Schutz sperrt Sendung")
+                        try:
+                            self.radio_rx_detector.inhibit(1500 + int(sum(len(x) for x in chunks) / (2 * rate) * 1000))
+                            state = None
+                            for chunk in chunks:
+                                if generation != self._parrot_generation:
+                                    break
+                                if out_rate != rate:
+                                    chunk, state = audioop.ratecv(chunk, 2, 1, rate, out_rate, state)
+                                stream.write(chunk)
+                        finally:
+                            self.gateway_ptt.key(False)
+            except Exception as exc:
+                self.parrotError.emit(str(exc))
+            finally:
+                self.parrotDone.emit(generation)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _parrot_done(self, generation):
+        if generation == self._parrot_generation:
+            self._parrot_playing = False
+            self.parrot_status.setText("Papagei: bereit")
+
+    def _parrot_error(self, message):
+        self.parrot_status.setText("Papagei: Fehler – " + str(message))
+        self.ui_log.appendPlainText("Papagei: " + str(message))
 
     def _build_audio(self):
         page = QWidget()
@@ -3167,6 +3338,7 @@ class MainWindow(QMainWindow):
             self.operating_mode.setCurrentIndex(pos)
 
     def _mode_changed(self, *_args):
+        self._parrot_reset()
         self._current_mode = self.operating_mode.currentData() or "pc"
         if self._current_mode not in ("gateway", "radio_parrot"):
             self._stop_tx_audio()
@@ -3175,7 +3347,8 @@ class MainWindow(QMainWindow):
             if self.ts_commander_auto.isChecked() and self.ts_commander_state:
                 self._set_ts_commander_state(False, "Betriebsart")
         elif self.gateway_started:
-            if self.tx_audio_enabled.isChecked():
+            if self.tx_audio_enabled.isChecked() and self._mode() != "radio_parrot":
+                if self._mode() != "radio_parrot":
                 self._start_tx_audio()
             self._start_radio_rx_detector()
             if self.ts_audio_bridge_enabled.isChecked():
@@ -3189,8 +3362,8 @@ class MainWindow(QMainWindow):
         descriptions = {
             "pc": "PC-User: FRN und künftig TeamSpeak/Mumble ohne Funkhardware.",
             "gateway": "Funk-Gateway: Funk ↔ VoIP. Windows-Audio/PTT-Portierung läuft.",
-            "radio_parrot": "Funk-Papagei: Funkaufnahme und Rückgabe. Windows-Portierung läuft.",
-            "voip_parrot": "VoIP-Papagei: VoIP-Aufnahme und Rückgabe. Windows-Portierung läuft.",
+            "radio_parrot": "Funk-Papagei: Funkaufnahme und Rückgabe über Funk-TX (Testbetrieb).",
+            "voip_parrot": "VoIP-Papagei: Mumble-Audio aufnehmen und in denselben Kanal zurückgeben (Testbetrieb).",
         }
         self.mode_note.setText(descriptions.get(mode, ""))
         if mode == "pc":
@@ -3772,8 +3945,9 @@ class MainWindow(QMainWindow):
             self.stop_main_btn.setEnabled(True)
             self._start_tx_audio()
             self._start_radio_rx_detector()
-            self._start_radio_audio_bridge()
-            self._ensure_mumble_radio_tx_engine()
+            if self._mode() != "radio_parrot":
+                self._start_radio_audio_bridge()
+                self._ensure_mumble_radio_tx_engine()
             try:
                 if self.mumble_native.connected and hasattr(self, "mumble_radio_to_net"):
                     self.mumble_native.set_radio_to_mumble(
@@ -3790,6 +3964,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Gateway PTT", str(exc))
 
     def _stop_gateway_ptt(self, silent=False):
+        self._parrot_reset()
         # Stop audio sources first. They own the automatic PTT activity and
         # must release it before the serial backend is closed.
         self._stop_tx_audio()
@@ -5026,6 +5201,11 @@ class MainWindow(QMainWindow):
                 self.dtmf_max_attempts.setValue(int(ptt_cfg.get("dtmf_max_attempts", 3)))
                 self.dtmf_lockout_seconds.setValue(int(ptt_cfg.get("dtmf_lockout_seconds", 60)))
                 self._configure_dtmf()
+            parrot_cfg = data.get("parrot", {})
+            self.parrot_threshold.setValue(float(parrot_cfg.get("threshold", -35)))
+            self.parrot_silence_ms.setValue(int(parrot_cfg.get("silence_ms", 1200)))
+            self.parrot_pause_ms.setValue(int(parrot_cfg.get("pause_ms", 800)))
+            self.parrot_max_seconds.setValue(int(parrot_cfg.get("max_seconds", 30)))
             ts_cfg = data.get("teamspeak", {})
             if hasattr(self, "ts_host"):
                 self.ts_host.setText(str(ts_cfg.get("host", "127.0.0.1")))
@@ -5078,6 +5258,12 @@ class MainWindow(QMainWindow):
                 "tx_output": self.tx_audio_output.currentData(),
                 "tx_threshold": self.tx_audio_threshold.value(),
                 "tx_hang_ms": self.tx_audio_hang.value(),
+            },
+            "parrot": {
+                "threshold": self.parrot_threshold.value(),
+                "silence_ms": self.parrot_silence_ms.value(),
+                "pause_ms": self.parrot_pause_ms.value(),
+                "max_seconds": self.parrot_max_seconds.value(),
             },
             "ptt": {
                 "backend": self.gateway_ptt_backend.currentData(),
