@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.15 – TeamSpeak-Plugin installieren/aktualisieren
+
+- FunkGateway kann die mitgelieferte .ts3_plugin-Datei selbst starten
+- Ja/Nein-Abfrage bei fehlendem oder älterem TeamSpeak-Plugin
+- installierte und mitgelieferte Plugin-Version werden angezeigt
+- neues lokales Plugin-Versionsprotokoll
+- manueller Button „TS3-Plugin installieren / aktualisieren“
+- bei „Nein“ läuft FunkGateway ohne Änderung weiter
+- TeamSpeak-Plugin auf Version 0.1.1 angehoben
+
 ## 0.2.14 – TS3-Plugin Restart/CT-State Fix
 
 - behebt festhängende TS3-Audiobrücke nach Aus-/Einschalten
