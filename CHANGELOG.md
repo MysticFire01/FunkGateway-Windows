@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.43 – Mumble Zertifikate wirklich im fertigen EXE testen
+
+- behebt den weiterhin auftretenden Fehler:
+  - „No module named cryptography.hazmat.bindings._rust“
+- PyInstaller sammelt cryptography jetzt vollständig über den offiziellen collect-all-Weg
+- kein manuelles Raten des Zielpfads für _rust.pyd mehr
+- neue Kommandozeilenprüfung:
+  - FunkGateway-Windows.exe --self-test-cert
+- GitHub Actions startet nach dem Build genau die fertige EXE mit diesem Selbsttest
+- Release wird nur erzeugt, wenn die fertige EXE ein Zertifikat im Speicher erzeugen, signieren und wieder lesen kann
+- Zertifikatsseite zeigt weiterhin den Backend-Status direkt in der Oberfläche
+- öffentliche Mumble-Serverliste zeigt jetzt klar an:
+  - offizielle Mumble-Liste
+  - oder begrenzte Fallback-Liste
+- offizielle Publist-Anfrage auf Mumble 1.5.939 aktualisiert
+- Fallback mit ca. 50 Einträgen ist künftig sofort als solcher erkennbar
+
 ## 0.2.42 – Mumble Zertifikate und Serverliste absichern
 
 - Zertifikatsbereich erhält einen echten In-Memory-Selbsttest
