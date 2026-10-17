@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.22 – TeamSpeak Channel-Auswahl bleibt stehen
+
+- manuell gewählter TeamSpeak-Channel wird nicht mehr vom 750-ms-Poller zurückgesetzt
+- Auswahl bleibt bestehen, bis „In gewählten Channel wechseln“ gedrückt wird
+- nach erfolgreichem Wechsel synchronisiert sich die Anzeige wieder mit dem echten Channel
+- beim Neuladen der Channel-Liste wird bewusst wieder auf den aktuellen Channel synchronisiert
+- PTT-COM-Port bleibt als automatisch gefülltes, editierbares Dropdown verfügbar
+
 ## 0.2.21 – Plugin-Update nicht mehr durch TeamSpeak-Helferprozesse blockiert
 
 - Sicherheitsprüfung orientiert sich jetzt primär am echten TeamSpeak-Client
