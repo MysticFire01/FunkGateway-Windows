@@ -112,6 +112,7 @@ class MainWindow(QMainWindow):
         self._current_mode = "pc"
         self.gateway_ptt = None
         self.gateway_started = False
+        self._last_dtmf_command_at = 0.0
 
         self.ts_client = TeamSpeakClientQuery()
         self.mumble_backend = MumbleWindowsBackend()
@@ -488,6 +489,72 @@ class MainWindow(QMainWindow):
         hf.addRow("Status:", self.gateway_ptt_status)
         hf.addRow("", test)
         v.addWidget(hw)
+
+        safety = QGroupBox("Gateway Schutzfunktionen")
+        sf = QFormLayout(safety)
+        self.gateway_safety_enabled = QCheckBox("Schutzfunktionen aktiv")
+        self.gateway_safety_enabled.setChecked(True)
+
+        self.gateway_tot = QSpinBox()
+        self.gateway_tot.setRange(10, 900)
+        self.gateway_tot.setValue(180)
+        self.gateway_tot.setSuffix(" s")
+
+        self.gateway_min_pause = QSpinBox()
+        self.gateway_min_pause.setRange(0, 10000)
+        self.gateway_min_pause.setSingleStep(100)
+        self.gateway_min_pause.setValue(1200)
+        self.gateway_min_pause.setSuffix(" ms")
+
+        self.gateway_return_guard = QSpinBox()
+        self.gateway_return_guard.setRange(0, 5000)
+        self.gateway_return_guard.setSingleStep(50)
+        self.gateway_return_guard.setValue(900)
+        self.gateway_return_guard.setSuffix(" ms")
+
+        self.gateway_rx_confirm = QSpinBox()
+        self.gateway_rx_confirm.setRange(0, 1000)
+        self.gateway_rx_confirm.setSingleStep(20)
+        self.gateway_rx_confirm.setValue(100)
+        self.gateway_rx_confirm.setSuffix(" ms")
+
+        self.gateway_safety_status = QLabel(
+            "Schutz bereit · TOT, Mindestpause und Rücklaufschutz"
+        )
+        self.gateway_safety_status.setWordWrap(True)
+
+        sf.addRow("", self.gateway_safety_enabled)
+        sf.addRow("Maximale TX-Dauer (TOT):", self.gateway_tot)
+        sf.addRow("Mindestpause nach TX:", self.gateway_min_pause)
+        sf.addRow("Rücklaufschutz / Plopp-Sperre:", self.gateway_return_guard)
+        sf.addRow("RX muss stabil anliegen:", self.gateway_rx_confirm)
+        sf.addRow("Status:", self.gateway_safety_status)
+        v.addWidget(safety)
+
+        dtmf = QGroupBox("DTMF Fernsteuerung")
+        df = QFormLayout(dtmf)
+        self.dtmf_enabled = QCheckBox("DTMF-Steuerung aktiv")
+        self.dtmf_pin = QLineEdit()
+        self.dtmf_pin.setEchoMode(QLineEdit.EchoMode.Password)
+        self.dtmf_pin.setMaxLength(8)
+        self.dtmf_pin.setPlaceholderText("4–8 Ziffern")
+        self.dtmf_status = QLabel("DTMF: aus")
+        self.dtmf_status.setWordWrap(True)
+        self.dtmf_last_digit = QLabel("Letzte Taste: —")
+        self.dtmf_note = QLabel(
+            "Befehle: *PIN*1# = Gateway starten · "
+            "*PIN*0# = Gateway stoppen · *PIN*9# = NOT-AUS / PTT AUS. "
+            "Die Funktion ist standardmäßig aus."
+        )
+        self.dtmf_note.setWordWrap(True)
+        self.dtmf_enabled.toggled.connect(self._configure_dtmf)
+        self.dtmf_pin.textChanged.connect(self._configure_dtmf)
+        df.addRow("", self.dtmf_enabled)
+        df.addRow("DTMF-PIN:", self.dtmf_pin)
+        df.addRow("", self.dtmf_last_digit)
+        df.addRow("Status:", self.dtmf_status)
+        df.addRow("", self.dtmf_note)
+        v.addWidget(dtmf)
 
         frn = QGroupBox("FRN PTT")
         ff = QFormLayout(frn)
