@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.17 Portable Preview**
+**0.1.18 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.17\
+FunkGateway-Windows-0.1.18\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -181,3 +181,12 @@ From 0.1.17 PortAudio and the GSM codec are started only after the FRN server
 has accepted login stage 2. A server response such as AL=BLOCK or AL=WRONG
 therefore creates no RX/TX audio worker at all, avoiding stale play_thread
 warnings and unnecessary device opens on rejected connections.
+
+
+## FRN protocol version compatibility
+
+From 0.1.18 the Windows client defaults to FRN client protocol version
+`VX=2014003`. The `<SV>2014004</SV>` field returned by some servers is the
+server version and must not be copied into the client VX field. This improves
+compatibility with older/filtered FRN servers while keeping the normal PC-only
+client class `CL=2`.
