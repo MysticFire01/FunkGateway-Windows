@@ -108,6 +108,7 @@ class MumbleNativeGateway(QObject):
         self._own_tx_active = False
         self._self_mute_local = False
         self._self_deaf_local = False
+        self._local_muted_sessions = set()
         self._certfile = ""
         self._keyfile = ""
 
@@ -331,6 +332,56 @@ class MumbleNativeGateway(QObject):
             myself.deafen()
         else:
             myself.undeafen()
+        return True
+
+    def set_user_local_mute(self, session, enabled):
+        try:
+            session = int(session)
+        except Exception as exc:
+            raise RuntimeError("Ungültige Mumble-Session.") from exc
+        if enabled:
+            self._local_muted_sessions.add(session)
+        else:
+            self._local_muted_sessions.discard(session)
+        self._emit_participants()
+        return True
+
+    def set_user_server_mute(self, session, enabled):
+        if not self._connected or self._mumble is None:
+            raise RuntimeError("Native Mumble-Verbindung ist nicht aktiv.")
+        try:
+            user = self._mumble.users[int(session)]
+        except Exception as exc:
+            raise RuntimeError("Mumble-Benutzer nicht gefunden.") from exc
+        try:
+            if bool(enabled):
+                user.mute()
+            else:
+                user.unmute()
+        except Exception as exc:
+            raise RuntimeError(
+                "Server-Mute konnte nicht geändert werden. "
+                "Dafür können Serverrechte erforderlich sein."
+            ) from exc
+        return True
+
+    def set_user_server_deaf(self, session, enabled):
+        if not self._connected or self._mumble is None:
+            raise RuntimeError("Native Mumble-Verbindung ist nicht aktiv.")
+        try:
+            user = self._mumble.users[int(session)]
+        except Exception as exc:
+            raise RuntimeError("Mumble-Benutzer nicht gefunden.") from exc
+        try:
+            if bool(enabled):
+                user.deafen()
+            else:
+                user.undeafen()
+        except Exception as exc:
+            raise RuntimeError(
+                "Server-Deaf konnte nicht geändert werden. "
+                "Dafür können Serverrechte erforderlich sein."
+            ) from exc
         return True
 
     def configure_pc_ptt(self, enabled, input_device=None):
@@ -644,8 +695,10 @@ class MumbleNativeGateway(QObject):
             if is_self:
                 self._self_mute_local = local_mute
                 self._self_deaf_local = local_deaf
+            session_id = int(self._prop(user, "session", _session))
             result.append({
                 "name": name,
+                "session": session_id,
                 "channel": channel_path,
                 "channel_id": (
                     int(channel_id) if channel_id is not None else None
@@ -656,6 +709,7 @@ class MumbleNativeGateway(QObject):
                 "server_deaf": server_deaf,
                 "local_mute": local_mute,
                 "local_deaf": local_deaf,
+                "local_user_mute": session_id in self._local_muted_sessions,
                 "current_channel": (
                     current_channel_id is not None
                     and channel_id is not None
