@@ -88,6 +88,27 @@ QTabBar::tab {{ background: {p['panel_alt']}; color: {p['text']}; border: 1px so
 QTabBar::tab:selected {{ background: {p['accent']}; color: {p['accent_text']}; border-color: {p['accent']}; }}
 QProgressBar {{ border: 1px solid {p['border']}; border-radius: 5px; text-align: center; background: {p['panel']}; color: {p['text']}; }}
 QProgressBar::chunk {{ background-color: {p['accent']}; border-radius: 4px; }}
+QTableView, QTableWidget {{
+    background-color: {p['bg']}; alternate-background-color: {p['panel']};
+    color: {p['text']}; gridline-color: {p['border']};
+    border: 1px solid {p['border']}; selection-background-color: {p['accent']};
+    selection-color: {p['accent_text']}; outline: 0;
+}}
+QTableView:focus, QTableWidget:focus {{ border: 1px solid {p['border']}; outline: 0; }}
+QTableView::item, QTableWidget::item {{ border: 0px; padding: 3px; }}
+QTableView::item:selected, QTableWidget::item:selected {{
+    background-color: {p['accent']}; color: {p['accent_text']};
+}}
+QHeaderView {{ background-color: {p['panel_alt']}; color: {p['text']}; }}
+QHeaderView::section {{
+    background-color: {p['panel_alt']}; color: {p['text']};
+    border: 0px; border-right: 1px solid {p['border']};
+    border-bottom: 1px solid {p['border']}; padding: 5px;
+}}
+QTableCornerButton::section {{
+    background-color: {p['panel_alt']}; border: 0px;
+    border-right: 1px solid {p['border']}; border-bottom: 1px solid {p['border']};
+}}
 QScrollArea {{ border: 0px; background: {p['bg']}; }}
 QScrollBar:vertical {{ background: {p['panel']}; width: 14px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: {p['border']}; min-height: 28px; border-radius: 6px; }}
