@@ -544,3 +544,11 @@ binding.
 This release also includes the polished Mumble channel tree with live user
 counts and the colored mouth icon placed directly to the left of each
 participant name.
+
+
+## Own Mumble talk state 0.2.33
+
+The native Mumble participant list now distinguishes the local FunkGateway user
+from other participants. The mouth icon is orange while the local user is
+talking, matching the FRN visual language. Other speakers remain red, whisper
+remains blue, and idle participants remain green.
