@@ -415,3 +415,14 @@ The plugin installer no longer relies only on Windows process names. After a
 close attempt, FunkGateway checks the actual local TS3 plugin endpoint and
 ClientQuery connection. If both are gone, the plugin DLL is considered unloaded
 and installation may proceed even if a launcher/updater/helper process remains.
+
+
+## Stable TeamSpeak channel selection 0.2.22
+
+The TeamSpeak status poller no longer overwrites a channel the operator has
+deliberately selected in the dropdown. The pending selection stays in place
+until the move button is pressed. After a successful move, normal live
+synchronization resumes.
+
+The gateway PTT serial-port field remains an editable dropdown populated from
+the serial ports detected by Windows.
