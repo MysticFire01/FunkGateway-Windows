@@ -741,13 +741,19 @@ class MainWindow(QMainWindow):
         cf.addWidget(QLabel("<b>Channels des verbundenen Mumble-Servers</b>"))
 
         self.mumble_channel_tree = QTreeWidget()
-        self.mumble_channel_tree.setColumnCount(2)
-        self.mumble_channel_tree.setHeaderLabels(["Channel", "Nutzer"])
+        self.mumble_channel_tree.setColumnCount(4)
+        self.mumble_channel_tree.setHeaderLabels(["Channel / Benutzer", "Nutzer", "Lokal", "Server"])
         self.mumble_channel_tree.header().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
         self.mumble_channel_tree.header().setSectionResizeMode(
             1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.mumble_channel_tree.header().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.mumble_channel_tree.header().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.ResizeToContents
         )
         self.mumble_channel_tree.setAlternatingRowColors(True)
         self.mumble_channel_tree.setSelectionMode(
@@ -765,13 +771,19 @@ class MainWindow(QMainWindow):
         self.mumble_native_channels_btn.clicked.connect(self._refresh_mumble_native_channels)
         self.mumble_native_move_btn = QPushButton("In gewählten Channel wechseln")
         self.mumble_native_move_btn.clicked.connect(self._move_mumble_native_channel)
+        self.mumble_channel_expand_btn = QPushButton("Alle Räume zuklappen")
+        self.mumble_channel_expand_btn.setCheckable(True)
+        self.mumble_channel_expand_btn.setChecked(True)
+        self.mumble_channel_expand_btn.clicked.connect(self._toggle_mumble_channel_tree)
         ch.addWidget(self.mumble_native_channels_btn)
         ch.addWidget(self.mumble_native_move_btn)
+        ch.addWidget(self.mumble_channel_expand_btn)
         cf.addWidget(channel_actions)
 
         self.mumble_channel_hint = QLabel(
-            "Die Benutzer stehen wie im normalen Mumble direkt unter ihrem Channel. "
-            "Die Nutzerzahl wird live aktualisiert. Doppelklick auf einen Channel wechselt direkt."
+            "Die Benutzer stehen direkt unter ihrem Channel. Rechts sieht man lokalen und "
+            "serverseitigen Mute/Deaf-Status. Mit dem Auf-/Zuklappen-Schalter lassen sich "
+            "alle Benutzer auf einmal ein- oder ausblenden. Doppelklick wechselt den Channel."
         )
         self.mumble_channel_hint.setWordWrap(True)
         cf.addWidget(self.mumble_channel_hint)
@@ -1565,7 +1577,7 @@ class MainWindow(QMainWindow):
             label = str(channel.get("name") or "")
             if channel.get("current"):
                 label = "▶ " + label
-            item = QTreeWidgetItem([label, str(users)])
+            item = QTreeWidgetItem([label, str(users), "", ""])
             channel_data = dict(channel)
             channel_data["kind"] = "channel"
             item.setData(0, Qt.ItemDataRole.UserRole, channel_data)
@@ -1586,7 +1598,21 @@ class MainWindow(QMainWindow):
 
         for item in roots:
             self.mumble_channel_tree.addTopLevelItem(item)
-        self.mumble_channel_tree.expandAll()
+        if getattr(self, "mumble_channel_expand_btn", None) is None or self.mumble_channel_expand_btn.isChecked():
+            self.mumble_channel_tree.expandAll()
+        else:
+            self.mumble_channel_tree.collapseAll()
+
+    def _toggle_mumble_channel_tree(self, expanded):
+        if not hasattr(self, "mumble_channel_tree"):
+            return
+        expanded = bool(expanded)
+        if expanded:
+            self.mumble_channel_tree.expandAll()
+            self.mumble_channel_expand_btn.setText("Alle Räume zuklappen")
+        else:
+            self.mumble_channel_tree.collapseAll()
+            self.mumble_channel_expand_btn.setText("Alle Räume aufklappen")
 
     def _selected_mumble_channel_path(self):
         item = self.mumble_channel_tree.currentItem() if hasattr(self, "mumble_channel_tree") else None
@@ -1658,8 +1684,19 @@ class MainWindow(QMainWindow):
 
             user_data = dict(participant)
             user_data["kind"] = "user"
-            user_item = QTreeWidgetItem([str(participant.get("name") or ""), ""])
+            local_status = self._mumble_status_text(participant, True)
+            server_status = self._mumble_status_text(participant, False)
+            user_item = QTreeWidgetItem([
+                str(participant.get("name") or ""),
+                "",
+                local_status,
+                server_status,
+            ])
             user_item.setData(0, Qt.ItemDataRole.UserRole, user_data)
+            if local_status != "—":
+                user_item.setToolTip(2, "Lokaler Mumble-Status: " + local_status)
+            if server_status != "—":
+                user_item.setToolTip(3, "Serverseitiger Mumble-Status: " + server_status)
 
             if participant.get("talking"):
                 mode = str(participant.get("speech_mode") or "normal")
@@ -1683,8 +1720,6 @@ class MainWindow(QMainWindow):
                 tips.append("Spricht")
             else:
                 tips.append("Spricht nicht")
-            local_status = self._mumble_status_text(participant, True)
-            server_status = self._mumble_status_text(participant, False)
             if local_status != "—":
                 tips.append("Lokal: " + local_status)
             if server_status != "—":
