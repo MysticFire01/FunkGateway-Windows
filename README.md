@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.9 Portable Preview**
+**0.1.10 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.9\
+FunkGateway-Windows-0.1.10\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -117,3 +117,10 @@ external updater helper. The helper is launched through Windows `cmd.exe start`
 instead of Python's detached-process flags, improving reliability on older
 Windows 10 systems. The PowerShell helper itself continues to write
 `logs\\update.log`.
+
+
+## PyInstaller updater module inclusion
+
+From 0.1.10 the Windows build explicitly includes `funkgateway.updates` as a
+PyInstaller hidden import. The build also validates that the updater module can
+be imported before packaging.
