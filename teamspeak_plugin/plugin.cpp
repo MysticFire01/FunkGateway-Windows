@@ -206,17 +206,23 @@ static void receiverLoop() {
                 g_socket, ack, static_cast<int>(sizeof(ack) - 1), 0,
                 reinterpret_cast<sockaddr*>(&from), fromLen);
         } else if (hdr->type == 5) {
-            static const char versionReply[] = "FGV10.1.1";
+            static const char versionReply[] = "FGV10.1.2";
             sendto(
                 g_socket, versionReply,
                 static_cast<int>(sizeof(versionReply) - 1), 0,
                 reinterpret_cast<sockaddr*>(&from), fromLen);
+        } else if (hdr->type == 6) {
+            // Explicit bridge reset after FunkGateway/TeamSpeak restart.
+            g_pendingEnableCT.store(false);
+            clearRing();
+            g_lastAudioTick.store(0);
+            g_pendingRestoreCT.store(true);
         }
     }
 }
 
 const char* ts3plugin_name() { return "FunkGateway Audio Bridge"; }
-const char* ts3plugin_version() { return "0.1.1"; }
+const char* ts3plugin_version() { return "0.1.2"; }
 int ts3plugin_apiVersion() { return PLUGIN_API_VERSION; }
 const char* ts3plugin_author() { return "MysticFire01"; }
 const char* ts3plugin_description() {
