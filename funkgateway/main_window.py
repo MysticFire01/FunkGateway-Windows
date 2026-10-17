@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
         self._parrot_duration = 0.0
         self._parrot_rate = 48000
         self._parrot_generation = 0
+        self._voip_parrot_enabled = False
         self._parrot_tail_until = 0.0
         self._dtmf_totp_secret = ""
         self._dtmf_totp_last_counter = -1
@@ -388,8 +389,8 @@ class MainWindow(QMainWindow):
         f = QFormLayout(box)
         f.addRow("PC-User:", QLabel("FRN und später TeamSpeak/Mumble ohne Funkhardware"))
         f.addRow("Funk-Gateway:", QLabel("Funkgerät ↔ VoIP; Windows-Audiokern folgt"))
-        f.addRow("Funk-Papagei:", QLabel("Funk aufnehmen und zurückgeben; folgt"))
-        f.addRow("VoIP-Papagei:", QLabel("VoIP aufnehmen und zurückgeben; folgt"))
+        f.addRow("Funk-Papagei:", QLabel("Funk-RX aufnehmen und über PTT/Funk-TX zurücksenden"))
+        f.addRow("VoIP-Papagei:", QLabel("Modulationstest für Mumble oder VoIP über virtuelle Audiogeräte"))
         v.addWidget(box)
 
         view_box = QGroupBox("Oberfläche")
@@ -432,6 +433,22 @@ class MainWindow(QMainWindow):
         pf.addRow("Maximale Aufnahmedauer:", self.parrot_max_seconds)
         pf.addRow("Status:", self.parrot_status)
         v.addWidget(parrot)
+        radio_help = QGroupBox("Funk-Papagei einrichten")
+        rh = QFormLayout(radio_help)
+        hint = QLabel(
+            "Funk-RX unter PTT / Modem wählen, Funk-TX-Ausgang unter Audio wählen, "
+            "PTT konfigurieren und dann die Betriebsart Funk-Papagei starten. "
+            "Bei Funkempfang wird aufgenommen; nach der Pause wird über PTT zurückgesendet."
+        )
+        hint.setWordWrap(True)
+        rh.addRow("", hint)
+        go_audio = QPushButton("Funk-TX Audio auswählen")
+        go_audio.clicked.connect(lambda: self.tabs.setCurrentIndex(self._tab_index("Audio")))
+        go_ptt = QPushButton("Funk-RX und PTT auswählen")
+        go_ptt.clicked.connect(lambda: self.tabs.setCurrentIndex(self._tab_index("PTT / Modem")))
+        rh.addRow("", go_audio)
+        rh.addRow("", go_ptt)
+        v.addWidget(radio_help)
 
         voip_box = QGroupBox("Universeller VoIP-Papagei – TeamSpeak, Mumble, FRN, TeamTalk")
         vf = QFormLayout(voip_box)
@@ -453,6 +470,13 @@ class MainWindow(QMainWindow):
         vf.addRow("", refresh_voip)
         vf.addRow("", start_voip)
         vf.addRow("", stop_voip)
+        start_hint = QLabel(
+            "Auch im nativen Mumble-Modus muss die Aufnahme ausdrücklich gestartet werden. "
+            "Für TeamSpeak, FRN und TeamTalk bitte Empfang und Mikrofon über passende "
+            "virtuelle Audiogeräte verbinden. Kein direktes Rückkopplungs-Routing!"
+        )
+        start_hint.setWordWrap(True)
+        vf.addRow("", start_hint)
         note = QLabel(
             "Universeller Modulationstest: Im jeweiligen VoIP-Programm dessen Audio "
             "auf den hier gewählten Eingang routen (z. B. VB-CABLE); als Mikrofon "
@@ -521,6 +545,8 @@ class MainWindow(QMainWindow):
         if mode == "radio_parrot" and not self.gateway_started:
             return
         if mode == "voip_parrot":
+            if not self._voip_parrot_enabled:
+                return
             if self.voip_parrot_source.currentData() == "native_mumble":
                 if not self.mumble_native.connected:
                     return
@@ -572,19 +598,28 @@ class MainWindow(QMainWindow):
             self.parrot_status.setText("Bitte erst VoIP-Papagei als Betriebsart wählen.")
             return
         if self.voip_parrot_source.currentData() == "native_mumble":
-            self.parrot_status.setText(
-                "Mumble-Direktmodus: " +
-                ("bereit" if self.mumble_native.connected else "bitte Mumble verbinden")
-            )
+            if not self.mumble_native.connected:
+                self.parrot_status.setText("Mumble-Direktmodus: zuerst Mumble verbinden")
+                return
+            self._parrot_reset()
+            self._voip_parrot_enabled = True
+            self.parrot_status.setText("Mumble-Modulationstest: aktiv")
             return
         device = self.voip_parrot_input.currentData()
+        if self.voip_parrot_output.currentData() is None:
+            self._parrot_error("VoIP-Ausgang fehlt")
+            return
         try:
+            self._parrot_reset()
             self.voip_parrot_capture.start(device)
-            self.parrot_status.setText("Universeller VoIP-Papagei: nimmt Eingang auf")
+            self._voip_parrot_enabled = True
+            self.parrot_status.setText("Universeller VoIP-Papagei: Modulationstest aktiv")
         except Exception as exc:
             self._parrot_error(str(exc))
 
     def _stop_voip_parrot_capture(self):
+        self._voip_parrot_enabled = False
+        self._parrot_reset()
         if hasattr(self, "voip_parrot_capture"):
             self.voip_parrot_capture.stop()
         if hasattr(self, "parrot_status"):
@@ -3508,7 +3543,6 @@ class MainWindow(QMainWindow):
             self.operating_mode.setCurrentIndex(pos)
 
     def _mode_changed(self, *_args):
-        self._parrot_reset()
         self._stop_voip_parrot_capture()
         self._current_mode = self.operating_mode.currentData() or "pc"
         if self._current_mode not in ("gateway", "radio_parrot"):
@@ -4117,7 +4151,8 @@ class MainWindow(QMainWindow):
             self.status_ptt.setText("PTT: Gateway bereit")
             self.start_main_btn.setEnabled(False)
             self.stop_main_btn.setEnabled(True)
-            self._start_tx_audio()
+            if self._mode() != "radio_parrot":
+                self._start_tx_audio()
             self._start_radio_rx_detector()
             if self._mode() != "radio_parrot":
                 self._start_radio_audio_bridge()
