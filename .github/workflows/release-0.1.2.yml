@@ -77,6 +77,7 @@ jobs:
           - Logs im Unterordner logs neben der EXE
           - keine FunkGateway-Konfiguration unter %APPDATA%
           - Release-ZIP enthält keine config.json; sie wird nur vom Programm erzeugt
+          - config- und logs-Ordner werden beim ersten Programmstart automatisch angelegt
 
           ## Wichtig zu FRN-Audio
           FRN-Audio benötigt GSM 06.10 WAV49. Diese erste Preview sucht unter
