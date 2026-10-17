@@ -622,6 +622,17 @@ class MumbleNativeGateway(QObject):
             self._speaker_times[name] = time.monotonic()
             self._speaker_modes[name] = speech_mode
 
+        # Local per-user mute is a receive filter owned by FunkGateway.
+        # Keep the visual speaking state above, but do not let muted PCM reach
+        # local playback or the Mumble -> radio bridge.
+        session = self._prop(user, "session", None)
+        try:
+            session = int(session)
+        except Exception:
+            session = None
+        if session is not None and session in self._local_muted_sessions:
+            return
+
         try:
             pcm = bytes(soundchunk.pcm)
             if not pcm:
