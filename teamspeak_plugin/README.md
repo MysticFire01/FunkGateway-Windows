@@ -16,3 +16,10 @@ TeamSpeak 3 danach neu starten. Alternativ liegt die DLL im Release-ZIP unter
 
 Das Plugin lauscht ausschließlich auf localhost. Es öffnet keinen Port nach
 außen.
+
+
+## 0.1.2
+
+- expliziter Bridge-Reset für saubere Neustarts
+- alter Audio-/Sendestatus wird beim TeamSpeak-Disconnect verworfen
+- Versionsabfrage für FunkGateway-Watchdog/Updater
