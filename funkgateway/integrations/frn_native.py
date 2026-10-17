@@ -1077,6 +1077,7 @@ class FrnNativeClient:
 
             self._set_state("IDLE")
             self._send_line("RX0")
+            self._send_line("ST:0")
             self.signals.log.emit(
                 "FRN verbunden. Native Audioverbindung ist aktiv."
                 if self.cfg.audio_enabled else
