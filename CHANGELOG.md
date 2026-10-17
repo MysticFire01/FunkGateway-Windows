@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.11 – Funk-RX unabhängig vom Channel Commander
+
+- Funk-RX-Erkennung läuft im Funk-Gateway/Funk-Papagei unabhängig von TeamSpeak Channel Commander
+- „Channel Commander automatisch bei Funk-RX“ steuert nur noch die Commander-Reaktion
+- Ausschalten der Commander-Automatik stoppt den RX-Detektor nicht mehr
+- Funk-RX Status/Pegel bleiben auch ohne Commander-Haken sichtbar
+- Beim Wechsel zurück in Gateway/Funk-Papagei startet der RX-Detektor wieder automatisch
+
 ## 0.2.10 – Generischer Audio-TX und WASAPI-Systemaudio
 
 - neuer integrationsunabhängiger `AudioTxEngine`
