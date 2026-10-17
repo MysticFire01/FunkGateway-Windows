@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.41 – Mumble PTT in der oberen Leiste
+
+- neue Mumble-PTT direkt neben der FRN-PTT
+- erscheint nur im PC-User-Modus
+- wird nur eingeblendet, wenn die native Mumble-Verbindung tatsächlich verbunden ist
+- nutzt dieselbe Mumble-PTT-Logik wie der Button im Mumble-Tab
+- zeigt während TX „Mumble PTT · SENDEN“ rot an
+- verschwindet beim Trennen von Mumble wieder automatisch
+- FRN-PTT und Mumble-PTT bleiben vollständig getrennt
+- eigener Mumble-Hotkey bleibt ebenfalls getrennt vom FRN-Hotkey
+- eigener Mumble-Mund beim Senden bleibt orange
+
 ## 0.2.40 – Mumble-Serverfavoriten
 
 - Mumble-Verbindungsseite erhält ein echtes Favoriten-Dropdown
