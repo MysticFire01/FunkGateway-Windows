@@ -167,7 +167,9 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.critical(self, "FunkGateway Update", str(exc))
             return
-        QApplication.quit()
+        # Use the normal window close path so FRN, audio and the global
+        # hotkey listener are stopped before the updater waits for our PID.
+        self.close()
 
     def _update_failed(self, message):
         self.statusBar().clearMessage()
