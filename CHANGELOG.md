@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 – Modusfarben und aufgeräumte Hauptleiste
+
+- aktive Haupt- und Unterreiter folgen jetzt der Betriebsartfarbe
+- PC-User blau, Funk-Gateway grün, Funk-Papagei orange, VoIP-Papagei violett
+- oberer PTT-Knopf ist nur noch im PC-User-Modus als FRN PTT sichtbar
+- Gateway-PTT-Test bleibt im Reiter PTT / Modem
+- Hauptleiste im Gateway-/Papagei-Modus aufgeräumt
+
 ## 0.2.1 – Dark-Table-Fix und Gateway-PTT-Grundfunktion
 
 - weiße Fokus-/Rahmenflächen der FRN-Tabellen im Dark Theme entfernt
