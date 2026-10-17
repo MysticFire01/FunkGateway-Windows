@@ -232,7 +232,23 @@ class MumbleNativeGateway(QObject):
         try:
             pymumble, cb_sound = self._import_pymumble()
             self.status.emit("Native Mumble: verbindet …")
-            mumble = pymumble.Mumble(
+            class DiagnosticMumble(pymumble.Mumble):
+                """Preserve the original exception from pymumble's background thread."""
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    self.connection_exception = None
+                    self.connection_failed = threading.Event()
+
+                def run(self):
+                    try:
+                        super().run()
+                    except Exception as exc:
+                        self.connection_exception = f"{type(exc).__name__}: {exc}"
+                        self.connection_failed.set()
+                        # pymumble unlocks is_ready() before raising a Reject,
+                        # so store the actual reason before the caller reports it.
+
+            mumble = DiagnosticMumble(
                 host, nickname, port=int(port), password=password,
                 certfile=(self._certfile or None),
                 keyfile=(self._keyfile or None),
@@ -254,10 +270,17 @@ class MumbleNativeGateway(QObject):
             state = int(getattr(mumble, "connected", 0))
             session = getattr(mumble.users, "myself_session", None)
             if state != 2 or session is None:
+                # A Reject unlocks is_ready() before pymumble raises the
+                # informative error on its own thread. Allow that thread
+                # a brief moment to publish the server's rejection reason.
+                mumble.connection_failed.wait(timeout=0.35)
+                original = mumble.connection_exception
                 diagnosis = self._connection_diagnostics(host, port)
                 raise RuntimeError(
                     "Mumble-Anmeldung nicht abgeschlossen "
                     f"(Protokollstatus={state}, Session={session}). "
+                    + (f"Originalfehler: {original}. " if original else
+                       "Keine genauere Ablehnung von pymumble verfügbar. ")
                     + diagnosis
                 )
 
