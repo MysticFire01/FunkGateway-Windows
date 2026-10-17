@@ -10,9 +10,23 @@ def _run_self_test_cert():
     return 0 if result.get("ok") else 2
 
 
+def _run_version_probe():
+    from funkgateway.constants import VERSION
+    try:
+        idx = sys.argv.index("--version-file")
+        target = sys.argv[idx + 1]
+    except Exception:
+        return 3
+    with open(target, "w", encoding="utf-8") as fh:
+        fh.write(str(VERSION))
+    return 0
+
+
 def main():
     if "--self-test-cert" in sys.argv:
         raise SystemExit(_run_self_test_cert())
+    if "--version-file" in sys.argv:
+        raise SystemExit(_run_version_probe())
 
     from PySide6.QtWidgets import QApplication
     from funkgateway.constants import APP_NAME
