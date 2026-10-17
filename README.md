@@ -407,3 +407,11 @@ known TeamSpeak 3 executable names with tasklist and falls back to PowerShell
 process discovery. If the user approves forced shutdown, taskkill /T /F is used
 first, followed by a PowerShell Stop-Process fallback. The plugin installer is
 only launched after TeamSpeak is confirmed stopped.
+
+
+## TS3 plugin-install safety check 0.2.21
+
+The plugin installer no longer relies only on Windows process names. After a
+close attempt, FunkGateway checks the actual local TS3 plugin endpoint and
+ClientQuery connection. If both are gone, the plugin DLL is considered unloaded
+and installation may proceed even if a launcher/updater/helper process remains.
