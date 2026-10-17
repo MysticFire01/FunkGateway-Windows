@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.6 – TeamSpeak Steuerung
+
+- TeamSpeak-Servername wird angezeigt
+- eigener TS-Nickname und Client-ID werden angezeigt
+- aktive Sprecher werden übersichtlich untereinander dargestellt
+- sichtbare Channel-Liste kann geladen werden
+- eigener TeamSpeak-Client kann in einen gewählten Channel wechseln
+- Channel Commander kann ein- und ausgeschaltet werden
+- aktueller Channel wird in der Auswahl synchronisiert
+- TeamSpeak-Steuerung bleibt unabhängig vom FRN-Kern
+
 ## 0.2.5 – TeamSpeak 3 ClientQuery Live-Test
 
 - Linux-TeamSpeak-ClientQuery-Backend nach Windows portiert
