@@ -501,6 +501,12 @@ class MumbleNativeGateway(QObject):
         except Exception:
             pass
 
+        myself_session = None
+        try:
+            myself_session = int(mumble.users.myself_session)
+        except Exception:
+            pass
+
         for _session, user in items:
             name = str(self._prop(user, "name", "") or "")
             if not name:
@@ -530,6 +536,10 @@ class MumbleNativeGateway(QObject):
                     current_channel_id is not None
                     and channel_id is not None
                     and int(channel_id) == int(current_channel_id)
+                ),
+                "is_self": (
+                    myself_session is not None
+                    and int(self._prop(user, "session", _session)) == myself_session
                 ),
             })
         return sorted(result, key=lambda item: (item["channel"].lower(), item["name"].lower()))
