@@ -825,7 +825,7 @@ class MainWindow(QMainWindow):
         pv.addWidget(self.mumble_participant_tabs)
 
         self.mumble_participant_legend = QLabel(
-            "Mund links vom Namen: grün = schweigt · rot = spricht · blau = flüstert   |   "
+            "Mund links vom Namen: grün = schweigt · orange = du sprichst · rot = andere sprechen · blau = flüstert   |   "
             "Lokal: 🎙 stumm / 🎧 taub   |   Server: 🔒🎙 stumm / 🔒🎧 taub"
         )
         self.mumble_participant_legend.setWordWrap(True)
@@ -1374,6 +1374,7 @@ class MainWindow(QMainWindow):
         color_map = {
             "idle": QColor("#2E9D57"),
             "talk": QColor("#E53935"),
+            "self_talk": QColor("#F2994A"),
             "whisper": QColor("#2F80ED"),
         }
         color = color_map.get(kind, color_map["idle"])
@@ -1417,13 +1418,21 @@ class MainWindow(QMainWindow):
             name_item = QTableWidgetItem(str(item.get("name") or ""))
             if item.get("talking"):
                 mode = str(item.get("speech_mode") or "normal")
-                mouth_kind = "whisper" if mode == "whisper" else "talk"
+                if mode == "whisper":
+                    mouth_kind = "whisper"
+                elif item.get("is_self"):
+                    mouth_kind = "self_talk"
+                else:
+                    mouth_kind = "talk"
             else:
                 mouth_kind = "idle"
             name_item.setIcon(self._mumble_mouth_icon(mouth_kind))
             name_item.setToolTip(
                 "Flüstert" if mouth_kind == "whisper"
-                else ("Spricht" if mouth_kind == "talk" else "Spricht nicht")
+                else (
+                    "Du sprichst" if mouth_kind == "self_talk"
+                    else ("Spricht" if mouth_kind == "talk" else "Spricht nicht")
+                )
             )
 
             channel_item = QTableWidgetItem(str(item.get("channel") or ""))
