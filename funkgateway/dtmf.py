@@ -39,6 +39,7 @@ class DtmfDecoder(QObject):
         self._sequence = ""
         self._buffer = bytearray()
         self._buffer_rate = 0
+        self._last_analysis_at = 0.0
 
     def configure(self, enabled=None, min_tone_ms=None, min_gap_ms=None):
         if enabled is not None:
@@ -56,6 +57,7 @@ class DtmfDecoder(QObject):
         self._sequence = ""
         self._buffer.clear()
         self._buffer_rate = 0
+        self._last_analysis_at = 0.0
 
     @staticmethod
     def _goertzel(samples, rate, freq):
@@ -77,7 +79,14 @@ class DtmfDecoder(QObject):
             return ""
         try:
             mono = pcm
-            # audioop is cheap and avoids numpy as another dependency.
+            # DTMF only needs a few kHz of bandwidth. Downsample to 8 kHz so
+            # the pure-Python Goertzel loops stay lightweight on the GUI.
+            work_rate = int(sample_rate)
+            if work_rate != 8000:
+                mono, _state = audioop.ratecv(
+                    mono, 2, 1, work_rate, 8000, None
+                )
+                work_rate = 8000
             rms = audioop.rms(mono, 2)
             if rms < 350:
                 return ""
@@ -87,11 +96,11 @@ class DtmfDecoder(QObject):
             ]
         except Exception:
             return ""
-        if len(samples) < max(80, int(sample_rate * 0.04)):
+        if len(samples) < max(80, int(work_rate * 0.04)):
             return ""
 
-        low_p = [self._goertzel(samples, sample_rate, f) for f in LOW]
-        high_p = [self._goertzel(samples, sample_rate, f) for f in HIGH]
+        low_p = [self._goertzel(samples, work_rate, f) for f in LOW]
+        high_p = [self._goertzel(samples, work_rate, f) for f in HIGH]
         li = max(range(4), key=lambda i: low_p[i])
         hi = max(range(4), key=lambda i: high_p[i])
         lmax = low_p[li]
@@ -128,6 +137,9 @@ class DtmfDecoder(QObject):
             return
         window = bytes(self._buffer[-wanted:])
         now = time.monotonic()
+        if now - self._last_analysis_at < 0.04:
+            return
+        self._last_analysis_at = now
         tone = self._detect(window, rate)
 
         if not tone:
