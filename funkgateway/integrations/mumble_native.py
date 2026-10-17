@@ -508,6 +508,33 @@ class MumbleNativeGateway(QObject):
         except Exception:
             return None
 
+    def snapshot_diagnostics(self):
+        """Read counts and connection state from the actual pymumble objects."""
+        mumble = self._mumble
+        if mumble is None:
+            return {"connected": False, "channels": 0, "users": 0,
+                    "own_session": None, "protocol_state": "no client"}
+        try:
+            channels = len(mumble.channels)
+        except Exception:
+            channels = -1
+        try:
+            users = len(mumble.users)
+        except Exception:
+            users = -1
+        try:
+            own_session = mumble.users.myself_session
+        except Exception:
+            own_session = None
+        return {
+            "connected": bool(self._connected),
+            "channels": channels,
+            "users": users,
+            "own_session": own_session,
+            "protocol_state": str(getattr(mumble, "connected", "?")),
+            "thread_alive": bool(getattr(mumble, "is_alive", lambda: False)()),
+        }
+
     def channel_snapshot(self):
         """Return channels with hierarchy and live user counts."""
         mumble = self._mumble
