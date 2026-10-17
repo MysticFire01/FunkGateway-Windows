@@ -234,3 +234,10 @@ gateway design: a safe dry/test backend and serial RTS/DTR through pyserial.
 Serial device names may be Windows COM ports or Linux /dev/tty* paths. The
 gateway start/stop controls initialize and release PTT safely; audio routing is
 implemented separately.
+
+
+## UI mode colors 0.2.2
+
+Selected tabs now follow the operating-mode accent color. The permanent FRN PTT
+button is only shown in PC-user mode; gateway hardware PTT remains available on
+the PTT / Modem page.
