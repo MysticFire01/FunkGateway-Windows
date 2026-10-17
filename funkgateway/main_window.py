@@ -6,12 +6,13 @@ import subprocess
 import time
 
 from PySide6.QtCore import QTimer, QObject, QThread, Signal, Qt
+from PySide6.QtGui import QPixmap, QPainter, QPainterPath, QColor, QIcon, QPen, QBrush
 from PySide6.QtWidgets import (
     QMainWindow, QApplication, QMessageBox, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QComboBox, QTabWidget, QGroupBox, QFormLayout,
     QCheckBox, QScrollArea, QPlainTextEdit, QLineEdit, QDoubleSpinBox, QSpinBox,
     QInputDialog, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QTreeWidget, QTreeWidgetItem
+    QAbstractItemView, QTreeWidget, QTreeWidgetItem, QFileDialog
 )
 
 from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
@@ -25,6 +26,10 @@ from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
 from .integrations.mumble_windows import MumbleWindowsBackend
 from .integrations.mumble_native import MumbleNativeGateway
 from .integrations.mumble_public import MumblePublicServerLoader
+from .mumble_certificates import (
+    list_certificates, create_certificate, import_pkcs12, import_pem,
+    delete_certificate,
+)
 from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_devices
 from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge, PLUGIN_VERSION as TS_PLUGIN_VERSION
 from .tx_audio import AudioTxEngine, SoundInputTxSource
@@ -77,6 +82,7 @@ class MainWindow(QMainWindow):
         self._mumble_public_thread = None
         self._mumble_public_worker = None
         self._mumble_public_servers = []
+        self._mumble_pc_ptt_active = False
         self.ts_last_status = None
         self.ts_last_speakers = []
         self.ts_last_channel = None
@@ -767,23 +773,46 @@ class MainWindow(QMainWindow):
         self.mumble_native_speakers = QLabel("Aktive Sprecher: —")
         self.mumble_native_speakers.setWordWrap(True)
         pv.addWidget(self.mumble_native_speakers)
-        self.mumble_participants = QTableWidget(0, 4)
-        self.mumble_participants.setHorizontalHeaderLabels(
-            ["Name", "Channel", "Spricht", "Status"]
+
+        self.mumble_participant_tabs = QTabWidget()
+        self.mumble_participants_channel = QTableWidget(0, 5)
+        self.mumble_participants_all = QTableWidget(0, 5)
+        for table in (self.mumble_participants_channel, self.mumble_participants_all):
+            table.setHorizontalHeaderLabels(
+                ["Name", "Channel", "Mund", "Lokal", "Server"]
+            )
+            table.horizontalHeader().setSectionResizeMode(
+                0, QHeaderView.ResizeMode.ResizeToContents
+            )
+            table.horizontalHeader().setSectionResizeMode(
+                1, QHeaderView.ResizeMode.Stretch
+            )
+            table.horizontalHeader().setSectionResizeMode(
+                2, QHeaderView.ResizeMode.ResizeToContents
+            )
+            table.horizontalHeader().setSectionResizeMode(
+                3, QHeaderView.ResizeMode.ResizeToContents
+            )
+            table.horizontalHeader().setSectionResizeMode(
+                4, QHeaderView.ResizeMode.ResizeToContents
+            )
+            table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+
+        self.mumble_participant_tabs.addTab(
+            self.mumble_participants_channel, "Aktueller Channel"
         )
-        self.mumble_participants.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
+        self.mumble_participant_tabs.addTab(
+            self.mumble_participants_all, "Gesamter Server"
         )
-        self.mumble_participants.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
+        pv.addWidget(self.mumble_participant_tabs)
+
+        self.mumble_participant_legend = QLabel(
+            "Mund: grün = schweigt · rot = spricht · blau = flüstert   |   "
+            "Lokal: 🎙 stumm / 🎧 taub   |   Server: 🔒🎙 stumm / 🔒🎧 taub"
         )
-        self.mumble_participants.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
-        )
-        self.mumble_participants.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
-        )
-        pv.addWidget(self.mumble_participants)
+        self.mumble_participant_legend.setWordWrap(True)
+        pv.addWidget(self.mumble_participant_legend)
         self.mumble_tabs.addTab(mw, "Teilnehmer")
 
         # ------------------------------------------------------- Audio / PTT
@@ -792,6 +821,11 @@ class MainWindow(QMainWindow):
         self.mumble_radio_to_net = QCheckBox("Funk-RX → Mumble senden")
         self.mumble_net_to_radio = QCheckBox("Mumble → Funk / RTS-DTR-PTT")
         self.mumble_net_to_radio.toggled.connect(self._mumble_net_to_radio_changed)
+        self.mumble_pc_ptt_enabled = QCheckBox("PC-User: Mikrofon-PTT für Mumble")
+        self.mumble_pc_ptt_btn = QPushButton("Mumble PTT halten")
+        self.mumble_pc_ptt_btn.setMinimumHeight(42)
+        self.mumble_pc_ptt_btn.pressed.connect(self._mumble_pc_ptt_press)
+        self.mumble_pc_ptt_btn.released.connect(self._mumble_pc_ptt_release)
         self.mumble_rx_input = QComboBox()
         self.mumble_rx_input.setMinimumWidth(300)
         self.mumble_rx_refresh_btn = QPushButton("Funk-RX Audiogeräte neu laden")
@@ -829,6 +863,8 @@ class MainWindow(QMainWindow):
 
         af.addRow("", self.mumble_radio_to_net)
         af.addRow("", self.mumble_net_to_radio)
+        af.addRow("", self.mumble_pc_ptt_enabled)
+        af.addRow("", self.mumble_pc_ptt_btn)
         af.addRow("Funk-RX Eingang:", self.mumble_rx_input)
         af.addRow("", self.mumble_rx_refresh_btn)
         af.addRow("RX-Schwellwert:", self.mumble_rx_threshold)
@@ -840,6 +876,54 @@ class MainWindow(QMainWindow):
         af.addRow("RX-Status:", self.mumble_rx_state_label)
         af.addRow("", self.mumble_native_note)
         self.mumble_tabs.addTab(mw, "Audio / PTT")
+
+        # ----------------------------------------------------- Zertifikate
+        mw = QWidget()
+        cv = QVBoxLayout(mw)
+        cv.addWidget(QLabel("<b>Mumble Zertifikate / Registrierung</b>"))
+
+        self.mumble_cert_select = QComboBox()
+        self.mumble_cert_refresh_btn = QPushButton("Zertifikate neu laden")
+        self.mumble_cert_create_btn = QPushButton("Neues Zertifikat erstellen")
+        self.mumble_cert_import_p12_btn = QPushButton("P12 / PFX importieren")
+        self.mumble_cert_import_pem_btn = QPushButton("PEM Zertifikat + Schlüssel importieren")
+        self.mumble_cert_delete_btn = QPushButton("Ausgewähltes Zertifikat löschen")
+        self.mumble_register_btn = QPushButton("Aktuellen Mumble-Benutzer registrieren")
+        self.mumble_cert_info = QLabel("Kein Zertifikat ausgewählt")
+        self.mumble_cert_info.setWordWrap(True)
+
+        self.mumble_cert_refresh_btn.clicked.connect(self._refresh_mumble_certificates)
+        self.mumble_cert_create_btn.clicked.connect(self._create_mumble_certificate)
+        self.mumble_cert_import_p12_btn.clicked.connect(self._import_mumble_p12)
+        self.mumble_cert_import_pem_btn.clicked.connect(self._import_mumble_pem)
+        self.mumble_cert_delete_btn.clicked.connect(self._delete_mumble_certificate)
+        self.mumble_register_btn.clicked.connect(self._register_mumble_user)
+        self.mumble_cert_select.currentIndexChanged.connect(self._mumble_certificate_changed)
+
+        cv.addWidget(self.mumble_cert_select)
+        cv.addWidget(self.mumble_cert_info)
+
+        row = QWidget()
+        rh = QHBoxLayout(row)
+        rh.setContentsMargins(0, 0, 0, 0)
+        rh.addWidget(self.mumble_cert_refresh_btn)
+        rh.addWidget(self.mumble_cert_create_btn)
+        cv.addWidget(row)
+        cv.addWidget(self.mumble_cert_import_p12_btn)
+        cv.addWidget(self.mumble_cert_import_pem_btn)
+        cv.addWidget(self.mumble_cert_delete_btn)
+        cv.addWidget(self.mumble_register_btn)
+
+        cert_note = QLabel(
+            "Für eine dauerhafte Mumble-Identität und Benutzerregistrierung wird "
+            "ein Client-Zertifikat verwendet. Die Zertifikate liegen portabel "
+            "im FunkGateway-Konfigurationsordner."
+        )
+        cert_note.setWordWrap(True)
+        cv.addWidget(cert_note)
+        cv.addStretch(1)
+        self.mumble_tabs.addTab(mw, "Zertifikate")
+        self._refresh_mumble_certificates()
 
         self.integration_tabs.addTab(mumble, "Mumble")
 
@@ -943,6 +1027,11 @@ class MainWindow(QMainWindow):
                 radio_to_mumble=self.mumble_radio_to_net.isChecked(),
                 threshold_dbfs=self.mumble_rx_threshold.value(),
                 hang_ms=self.mumble_rx_hang.value(),
+                certfile=self._selected_mumble_cert_path("cert"),
+                keyfile=self._selected_mumble_cert_path("key"),
+                pc_ptt_enabled=(
+                    self._mode() == "pc" and self.mumble_pc_ptt_enabled.isChecked()
+                ),
             )
             self._ensure_mumble_radio_tx_engine()
         except Exception as exc:
@@ -955,8 +1044,9 @@ class MainWindow(QMainWindow):
         finally:
             self.mumble_native_connect_btn.setEnabled(True)
             self.mumble_native_disconnect_btn.setEnabled(False)
-            if hasattr(self, "mumble_participants"):
-                self.mumble_participants.setRowCount(0)
+            if hasattr(self, "mumble_participants_all"):
+                self.mumble_participants_all.setRowCount(0)
+                self.mumble_participants_channel.setRowCount(0)
             if hasattr(self, "mumble_tx_meter"):
                 self.mumble_tx_meter.setValue(0)
                 self.mumble_rx_meter.setValue(0)
@@ -1185,6 +1275,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "mumble_native_connect_btn"):
             self.mumble_native_connect_btn.setEnabled(not connected)
             self.mumble_native_disconnect_btn.setEnabled(connected)
+        if hasattr(self, "mumble_pc_ptt_btn"):
+            self.mumble_pc_ptt_btn.setEnabled(
+                connected and self._mode() == "pc"
+                and self.mumble_pc_ptt_enabled.isChecked()
+            )
         if connected:
             self.status_mumble.setText("Mumble: Native Gateway verbunden")
             QTimer.singleShot(600, self._refresh_mumble_native_channels)
@@ -1207,27 +1302,85 @@ class MainWindow(QMainWindow):
                 "Aktive Sprecher: " + (", ".join(names) if names else "—")
             )
 
+    @staticmethod
+    def _mumble_mouth_icon(kind):
+        # Draw a simple lips/mouth glyph ourselves so Windows emoji rendering
+        # cannot override the desired green/red/blue state color.
+        color_map = {
+            "idle": QColor("#2E9D57"),
+            "talk": QColor("#E53935"),
+            "whisper": QColor("#2F80ED"),
+        }
+        color = color_map.get(kind, color_map["idle"])
+        pix = QPixmap(26, 18)
+        pix.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pix)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(QPen(color, 1.6))
+        painter.setBrush(QBrush(color))
+
+        path = QPainterPath()
+        path.moveTo(2.5, 9.0)
+        path.cubicTo(7.0, 3.0, 10.0, 4.2, 13.0, 6.4)
+        path.cubicTo(16.0, 4.2, 19.0, 3.0, 23.5, 9.0)
+        path.cubicTo(19.0, 15.0, 7.0, 15.0, 2.5, 9.0)
+        painter.drawPath(path)
+
+        painter.setPen(QPen(QColor("#202020"), 1.0))
+        painter.drawLine(5, 9, 21, 9)
+        painter.end()
+        return QIcon(pix)
+
+    @staticmethod
+    def _mumble_status_text(item, local):
+        states = []
+        if local:
+            if item.get("local_mute"):
+                states.append("🎙 stumm")
+            if item.get("local_deaf"):
+                states.append("🎧 taub")
+        else:
+            if item.get("server_mute"):
+                states.append("🔒🎙 stumm")
+            if item.get("server_deaf"):
+                states.append("🔒🎧 taub")
+        return "  ".join(states) if states else "—"
+
+    def _fill_mumble_participant_table(self, table, rows):
+        table.setRowCount(len(rows))
+        for row, item in enumerate(rows):
+            name_item = QTableWidgetItem(str(item.get("name") or ""))
+            channel_item = QTableWidgetItem(str(item.get("channel") or ""))
+
+            mouth_item = QTableWidgetItem("")
+            if item.get("talking"):
+                mode = str(item.get("speech_mode") or "normal")
+                mouth_kind = "whisper" if mode == "whisper" else "talk"
+            else:
+                mouth_kind = "idle"
+            mouth_item.setIcon(self._mumble_mouth_icon(mouth_kind))
+            mouth_item.setToolTip(
+                "Flüstert" if mouth_kind == "whisper"
+                else ("Spricht" if mouth_kind == "talk" else "Spricht nicht")
+            )
+
+            local_item = QTableWidgetItem(self._mumble_status_text(item, True))
+            server_item = QTableWidgetItem(self._mumble_status_text(item, False))
+
+            for col, cell in enumerate(
+                (name_item, channel_item, mouth_item, local_item, server_item)
+            ):
+                table.setItem(row, col, cell)
+
     def _mumble_native_participants_changed(self, participants):
-        if not hasattr(self, "mumble_participants"):
+        if not hasattr(self, "mumble_participants_all"):
             return
         rows = list(participants or [])
-        self.mumble_participants.setRowCount(len(rows))
-        for row, item in enumerate(rows):
-            status = []
-            if item.get("muted"):
-                status.append("stumm")
-            if item.get("deaf"):
-                status.append("taub")
-            values = (
-                str(item.get("name") or ""),
-                str(item.get("channel") or ""),
-                "●" if item.get("talking") else "",
-                ", ".join(status) if status else "normal",
-            )
-            for col, value in enumerate(values):
-                self.mumble_participants.setItem(
-                    row, col, QTableWidgetItem(value)
-                )
+        current_rows = [item for item in rows if item.get("current_channel")]
+        self._fill_mumble_participant_table(self.mumble_participants_all, rows)
+        self._fill_mumble_participant_table(
+            self.mumble_participants_channel, current_rows
+        )
 
     def _mumble_native_rx_activity_changed(self, active):
         if hasattr(self, "mumble_rx_state_label"):
@@ -1265,6 +1418,172 @@ class MainWindow(QMainWindow):
             self.mumble_native_status_label.setText(text)
         if hasattr(self, "ui_log"):
             self.ui_log.appendPlainText(text)
+
+    def _mumble_pc_ptt_press(self):
+        if self._mode() != "pc":
+            return
+        if not self.mumble_pc_ptt_enabled.isChecked():
+            return
+        if not self.mumble_native.connected:
+            self.mumble_native_status_label.setText(
+                "Native Mumble: für PC-PTT zuerst verbinden"
+            )
+            return
+        self.mumble_native.configure_pc_ptt(
+            True, self.mumble_rx_input.currentData()
+        )
+        self.mumble_native.set_pc_ptt(True)
+        self._mumble_pc_ptt_active = True
+        self.mumble_pc_ptt_btn.setText("Mumble PTT · SENDEN")
+        self.mumble_pc_ptt_btn.setStyleSheet(
+            "background:#E53935;color:white;font-weight:bold;"
+        )
+
+    def _mumble_pc_ptt_release(self):
+        if not self._mumble_pc_ptt_active:
+            return
+        self.mumble_native.set_pc_ptt(False)
+        self._mumble_pc_ptt_active = False
+        self.mumble_pc_ptt_btn.setText("Mumble PTT halten")
+        self.mumble_pc_ptt_btn.setStyleSheet("")
+
+    def _selected_mumble_certificate(self):
+        if not hasattr(self, "mumble_cert_select"):
+            return None
+        data = self.mumble_cert_select.currentData()
+        return data if isinstance(data, dict) else None
+
+    def _selected_mumble_cert_path(self, which):
+        info = self._selected_mumble_certificate()
+        if not info:
+            return ""
+        return str(info.get("cert_path" if which == "cert" else "key_path") or "")
+
+    def _refresh_mumble_certificates(self):
+        if not hasattr(self, "mumble_cert_select"):
+            return
+        current_id = ""
+        current = self._selected_mumble_certificate()
+        if current:
+            current_id = str(current.get("id") or "")
+        self.mumble_cert_select.blockSignals(True)
+        self.mumble_cert_select.clear()
+        self.mumble_cert_select.addItem("Kein Zertifikat", None)
+        for info in list_certificates():
+            self.mumble_cert_select.addItem(str(info.get("name") or info["id"]), info)
+        if current_id:
+            for idx in range(self.mumble_cert_select.count()):
+                data = self.mumble_cert_select.itemData(idx)
+                if isinstance(data, dict) and str(data.get("id") or "") == current_id:
+                    self.mumble_cert_select.setCurrentIndex(idx)
+                    break
+        self.mumble_cert_select.blockSignals(False)
+        self._mumble_certificate_changed()
+
+    def _mumble_certificate_changed(self, *_args):
+        info = self._selected_mumble_certificate()
+        if not info:
+            self.mumble_cert_info.setText("Kein Zertifikat ausgewählt")
+            return
+        self.mumble_cert_info.setText(
+            f"Name: {info.get('name','')}\n"
+            f"Subjekt: {info.get('subject','')}\n"
+            f"SHA-256: {info.get('fingerprint','')}\n"
+            f"Gültig bis: {info.get('not_after','')}"
+        )
+
+    def _create_mumble_certificate(self):
+        name, ok = QInputDialog.getText(
+            self, "Mumble Zertifikat",
+            "Name für das neue Zertifikat:",
+            QLineEdit.EchoMode.Normal,
+            self.mumble_native_nick.text().strip() or "FunkGateway Windows",
+        )
+        if not ok or not name.strip():
+            return
+        try:
+            create_certificate(name.strip())
+            self._refresh_mumble_certificates()
+        except Exception as exc:
+            QMessageBox.warning(self, "Mumble Zertifikat", str(exc))
+
+    def _import_mumble_p12(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Mumble P12/PFX importieren", "",
+            "PKCS#12 (*.p12 *.pfx);;Alle Dateien (*.*)"
+        )
+        if not path:
+            return
+        password, ok = QInputDialog.getText(
+            self, "P12/PFX Passwort",
+            "Passwort (leer lassen, falls keines gesetzt ist):",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        try:
+            import_pkcs12(path, password or None)
+            self._refresh_mumble_certificates()
+        except Exception as exc:
+            QMessageBox.warning(self, "Mumble Zertifikat", str(exc))
+
+    def _import_mumble_pem(self):
+        cert, _ = QFileDialog.getOpenFileName(
+            self, "PEM Zertifikat wählen", "", "PEM (*.pem *.crt *.cer);;Alle Dateien (*.*)"
+        )
+        if not cert:
+            return
+        key, _ = QFileDialog.getOpenFileName(
+            self, "Privaten PEM-Schlüssel wählen", "", "PEM (*.pem *.key);;Alle Dateien (*.*)"
+        )
+        if not key:
+            return
+        try:
+            import_pem(cert, key)
+            self._refresh_mumble_certificates()
+        except Exception as exc:
+            QMessageBox.warning(self, "Mumble Zertifikat", str(exc))
+
+    def _delete_mumble_certificate(self):
+        info = self._selected_mumble_certificate()
+        if not info:
+            return
+        answer = QMessageBox.question(
+            self, "Mumble Zertifikat löschen",
+            f"Zertifikat „{info.get('name','')}“ wirklich löschen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            delete_certificate(str(info.get("id") or ""))
+            self._refresh_mumble_certificates()
+        except Exception as exc:
+            QMessageBox.warning(self, "Mumble Zertifikat", str(exc))
+
+    def _register_mumble_user(self):
+        if not self.mumble_native.connected:
+            QMessageBox.warning(
+                self, "Mumble Registrierung",
+                "Zuerst mit dem gewünschten Zertifikat nativ verbinden."
+            )
+            return
+        if not self._selected_mumble_certificate():
+            QMessageBox.warning(
+                self, "Mumble Registrierung",
+                "Für die Registrierung muss ein Zertifikat ausgewählt sein."
+            )
+            return
+        try:
+            self.mumble_native.register_current_user()
+            QMessageBox.information(
+                self, "Mumble Registrierung",
+                "Registrierungsanforderung wurde an den Server gesendet. "
+                "Ob sie erlaubt ist, hängt von den Serverrechten ab."
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Mumble Registrierung", str(exc))
 
     def _ensure_mumble_radio_tx_engine(self):
         if not hasattr(self, "mumble_net_to_radio"):
@@ -1587,6 +1906,13 @@ class MainWindow(QMainWindow):
             "}"
         )
         self._update_frn_ptt_button_style()
+        if hasattr(self, "mumble_pc_ptt_btn"):
+            self.mumble_pc_ptt_btn.setEnabled(
+                mode == "pc" and self.mumble_native.connected
+                and self.mumble_pc_ptt_enabled.isChecked()
+            )
+            if mode != "pc":
+                self._mumble_pc_ptt_release()
 
         for m, button in self.mode_cards.items():
             if m == mode:
@@ -2981,6 +3307,15 @@ class MainWindow(QMainWindow):
                     self.mumble_net_to_radio.setChecked(bool(mumble_cfg.get("net_to_radio", False)))
                     self.mumble_rx_threshold.setValue(float(mumble_cfg.get("rx_threshold", -35.0)))
                     self.mumble_rx_hang.setValue(int(mumble_cfg.get("rx_hang_ms", 700)))
+                    if hasattr(self, "mumble_pc_ptt_enabled"):
+                        self.mumble_pc_ptt_enabled.setChecked(bool(mumble_cfg.get("pc_ptt_enabled", False)))
+                    wanted_cert = str(mumble_cfg.get("certificate_id", ""))
+                    if wanted_cert and hasattr(self, "mumble_cert_select"):
+                        for cert_idx in range(self.mumble_cert_select.count()):
+                            cert_data = self.mumble_cert_select.itemData(cert_idx)
+                            if isinstance(cert_data, dict) and str(cert_data.get("id") or "") == wanted_cert:
+                                self.mumble_cert_select.setCurrentIndex(cert_idx)
+                                break
                     wanted_rx = mumble_cfg.get("rx_input")
                     if wanted_rx is not None:
                         idx = self.mumble_rx_input.findData(wanted_rx)
@@ -3083,6 +3418,12 @@ class MainWindow(QMainWindow):
                 "rx_input": self.mumble_rx_input.currentData() if hasattr(self, "mumble_rx_input") else None,
                 "rx_threshold": self.mumble_rx_threshold.value() if hasattr(self, "mumble_rx_threshold") else -35.0,
                 "rx_hang_ms": self.mumble_rx_hang.value() if hasattr(self, "mumble_rx_hang") else 700,
+                "pc_ptt_enabled": self.mumble_pc_ptt_enabled.isChecked() if hasattr(self, "mumble_pc_ptt_enabled") else False,
+                "certificate_id": (
+                    str(self._selected_mumble_certificate().get("id") or "")
+                    if hasattr(self, "mumble_cert_select") and self._selected_mumble_certificate()
+                    else ""
+                ),
             },
             "teamspeak": {
                 "enabled": self.ts_enabled.isChecked(),
