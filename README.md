@@ -256,3 +256,12 @@ Local PTT hotkeys are fully event-driven, including modifier-only keys such as
 Ctrl, Alt and Shift. The previous modifier polling path is no longer used.
 Global pynput hotkeys cache their token set and local PTT is force-released if
 the application loses focus while a key is held.
+
+
+## TeamSpeak ClientQuery 0.2.5
+
+The Windows port now includes the Linux TeamSpeak 3 ClientQuery backend in
+read-only mode. It can detect the running local TS3 client, show the current
+channel and list active speakers. Windows AppData locations are searched for
+clientquery.ini/API keys automatically. Control actions remain disabled until
+the read-only path is verified.
