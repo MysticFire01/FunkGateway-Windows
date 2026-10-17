@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.14 Portable Preview
+
+- behebt Windows-Absturz beim Raumwechsel während laufender FRN-RX-Sprache
+- Netzwerk/Socket wird beim Trennen zuerst gestoppt
+- RX- und TX-Audio-Threads dürfen anschließend sauber auslaufen
+- erst danach werden PortAudio-Streams und GSM-Codec geschlossen
+- Raumwechsel wartet synchron auf den alten FRN-Client, bevor neu verbunden wird
+- verhindert, dass ein RX-Thread noch in `decode/resample/write` arbeitet, während Audio-Ressourcen freigegeben werden
+- Audio-Test, Pegel-Auto-Reset, RX/TX-Resampling und Updater-Fixes bleiben erhalten
+
 ## 0.1.13 Portable Preview
 
 - neuer Button „Audio-Ausgang testen“ im FRN-Verbindungsbereich
