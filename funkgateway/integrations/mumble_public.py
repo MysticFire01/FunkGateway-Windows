@@ -16,7 +16,7 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkRe
 
 
 # Official public list used by the Mumble desktop client.
-OFFICIAL_PUBLIC_LIST_URL = "https://publist.mumble.info/v1/list?version=1.5.915"
+OFFICIAL_PUBLIC_LIST_URL = "https://publist.mumble.info/v1/list?version=1.5.939"
 
 # Fallback only. This endpoint currently returns a much smaller result set.
 LEGACY_PUBLIC_LIST_URL = "https://www.mumble.com/serverlist/ajax/list-servers.php"
@@ -83,10 +83,10 @@ def _download_qt(url: str, accept: str, timeout_ms: int = 20000) -> tuple[bytes,
     """
     manager = QNetworkAccessManager()
     request = QNetworkRequest(QUrl(url))
-    request.setRawHeader(b"User-Agent", b"Mumble/1.5.915 FunkGateway-Windows")
+    # Keep the request intentionally close to Mumble's own WebFetch path.
+    # In particular, do not force Connection/Transfer-Encoding related headers.
+    request.setRawHeader(b"User-Agent", b"Mumble/1.5.939 FunkGateway-Windows")
     request.setRawHeader(b"Accept", accept.encode("ascii", errors="ignore"))
-    request.setRawHeader(b"Accept-Encoding", b"identity")
-    request.setRawHeader(b"Connection", b"close")
 
     reply = manager.get(request)
     loop = QEventLoop()
