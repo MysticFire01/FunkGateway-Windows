@@ -495,6 +495,12 @@ class MumbleNativeGateway(QObject):
             pass
 
         result = []
+        myself_session = None
+        try:
+            myself_session = int(mumble.users.myself_session)
+        except Exception:
+            pass
+
         for _session, user in items:
             name = str(self._prop(user, "name", "") or "")
             if not name:
@@ -516,6 +522,10 @@ class MumbleNativeGateway(QObject):
                 "server_deaf": server_deaf,
                 "local_mute": local_mute,
                 "local_deaf": local_deaf,
+                "is_self": (
+                    myself_session is not None
+                    and int(_session) == myself_session
+                ),
                 "current_channel": (
                     current_channel_id is not None
                     and channel_id is not None
