@@ -584,3 +584,14 @@ check fails the workflow if the Rust binding is missing.
 Tree widgets now use the same dark background, alternating-row background and
 selection colors as FunkGateway tables. This removes bright white alternating
 rows from the Mumble public-server list and channel tree.
+
+
+## Full official Mumble public list 0.2.37
+
+The Mumble server browser now uses the same official public-list service as the
+desktop Mumble client: `https://publist.mumble.info/v1/list`. The previous
+mumble.com endpoint was kept only as a fallback because it exposed a much
+smaller result set.
+
+FunkGateway still groups servers by country and augments the official metadata
+with live Mumble UDP ping information for current/max users and latency.
