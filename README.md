@@ -683,3 +683,11 @@ Every Windows release now validates the version from the finished PyInstaller
 EXE itself before creating a ZIP or GitHub release. This prevents a release tag
 or ZIP filename from claiming a newer version while the packaged application
 still contains an older VERSION constant.
+
+
+## Mumble certificate export 0.2.47
+
+The Mumble certificate page can now export the selected identity either as a
+PEM certificate/private-key pair or as a single PKCS#12/PFX file. The folder
+chooser starts in the portable `config/mumble_certificates` directory. PKCS#12
+exports may optionally be password protected.
