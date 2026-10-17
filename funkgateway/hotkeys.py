@@ -99,6 +99,13 @@ class LocalPttHotkey(QObject):
 
     def eventFilter(self, obj, event):
         et = event.type()
+        # If FunkGateway loses focus while a local PTT key is held, release it
+        # immediately so no stuck-TX state remains.
+        if et in (QEvent.Type.ApplicationDeactivate, QEvent.Type.WindowDeactivate):
+            if self._active:
+                self._active = False
+                self.released.emit()
+            return False
         if et not in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
             return False
         if not self._matches(event):
