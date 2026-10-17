@@ -17,6 +17,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        # Portable data directories are created by the application itself.
+        # The release ZIP intentionally contains no config.json.
+        ensure_cfg()
         self.setWindowTitle(f"{APP_NAME} {VERSION} – FRN Preview")
         self.resize(1050, 760)
         self.setMinimumSize(820, 600)
