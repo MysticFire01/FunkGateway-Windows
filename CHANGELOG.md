@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.27 – Öffentliche Mumble-Serverliste nach Ländern
+
+- neue Mumble-Unterseite „Serverliste“
+- öffentliche Server werden nach Ländern gruppiert
+- Länder alphabetisch sortiert
+- innerhalb eines Landes sortierbar nach:
+  - Name A–Z
+  - aktueller Benutzerzahl
+  - Ping
+  - Auslastung
+- Suche nach Servername, Host, Land, Region oder Provider
+- Länderfilter mit Länderflaggen
+- Live-UDP-Ping ergänzt Benutzerzahl, Maximalnutzer, Ping, Bandbreite und Serverversion soweit der Server dies erlaubt
+- Länderzeile zeigt Anzahl gefundener Server und aktuell gemeldete Nutzer
+- Deutschland wird beim Laden automatisch aufgeklappt
+- Doppelklick oder „Gewählten Server übernehmen“ trägt Host und Port direkt in die Mumble-Verbindung ein
+- Serverliste wird im Hintergrund geladen, damit die Oberfläche bedienbar bleibt
+
 ## 0.2.26 – Mumble auf FRN-Niveau bei Bedienung und Status
 
 - Mumble-Integration in vier Unterseiten gegliedert: Verbindung, Channels, Teilnehmer, Audio / PTT
