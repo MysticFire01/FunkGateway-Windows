@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.28 – Windows-Buildfix für native Mumble-Bibliothek
+
+- behebt den GitHub-Actions-Fehler „No module named pymumble_py3“
+- pymumble 1.6.1 wird im Windows-Build direkt aus dem offiziellen Upstream-Tag 1.6.1 bezogen
+- das Paketverzeichnis pymumble_py3 wird vor der Validierung in den Buildbaum kopiert
+- Import von pymumble_py3 wird explizit vor PyInstaller geprüft
+- PyPI-pymumble wird nicht mehr als Buildquelle verwendet
+- Upstream-Lizenz und Drittanbieterhinweis werden mit ausgeliefert
+- 0.2.25 bis 0.2.27 müssen nicht separat neu gebaut werden; 0.2.28 enthält deren Mumble-Funktionen
+
 ## 0.2.27 – Öffentliche Mumble-Serverliste nach Ländern
 
 - neue Mumble-Unterseite „Serverliste“
