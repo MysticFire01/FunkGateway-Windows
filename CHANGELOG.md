@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.6 Portable Preview
+
+- Selbstupdater: Windows-Pfade werden korrekt als PowerShell-Literale übergeben
+- `logs\\update.log` protokolliert den kompletten Update-Ablauf
+- Dateikopien werden bei kurzzeitigen Windows-Dateisperren mehrfach versucht
+- automatischer Neustart wird protokolliert
+- `config` und `logs` bleiben vom Ersetzen ausgeschlossen
+- GSM-WAV49-Codec aus 0.1.5 bleibt enthalten
+
 ## 0.1.5 Portable Preview
 
 - Windows FRN-Audio: `libgsm.dll` wird direkt im portablen Release mitgeliefert
