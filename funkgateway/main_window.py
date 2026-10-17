@@ -36,6 +36,38 @@ from .tx_audio import AudioTxEngine, SoundInputTxSource
 from .wasapi_loopback import WasapiSystemLoopbackSource
 
 
+DEFAULT_MUMBLE_FAVORITES = [
+    {
+        "id": "mumble_funk_main",
+        "name": "Mumble-Funk Hauptserver",
+        "host": "voice.mumble-funk.de",
+        "port": 64738,
+        "locked": True,
+    },
+    {
+        "id": "freiesfunknetz",
+        "name": "FreiesFunkNetz",
+        "host": "mumble.freiesfunknetz.com",
+        "port": 64738,
+        "locked": False,
+    },
+    {
+        "id": "radiobunker_dn9lo",
+        "name": "RadioBunker / DN9LO",
+        "host": "dn9lo.de",
+        "port": 64738,
+        "locked": False,
+    },
+    {
+        "id": "qso4you",
+        "name": "QSO4YOU",
+        "host": "mumble.qso4you.com",
+        "port": 64738,
+        "locked": False,
+    },
+]
+
+
 class UpdateWorker(QObject):
     finished = Signal(object, object)
     failed = Signal(str)
@@ -83,6 +115,7 @@ class MainWindow(QMainWindow):
         self._mumble_public_worker = None
         self._mumble_public_servers = []
         self._mumble_pc_ptt_active = False
+        self._mumble_favorites = [dict(item) for item in DEFAULT_MUMBLE_FAVORITES]
         self.ts_last_status = None
         self.ts_last_speakers = []
         self.ts_last_channel = None
@@ -609,6 +642,18 @@ class MainWindow(QMainWindow):
         self.mumble_enabled.setChecked(True)
         self.mumble_status_label = QLabel("Noch nicht geprüft")
         self.mumble_version_label = QLabel("—")
+        self.mumble_favorite_select = QComboBox()
+        self.mumble_favorite_select.setMinimumWidth(320)
+        self.mumble_favorite_select.currentIndexChanged.connect(
+            self._mumble_favorite_selected
+        )
+        self.mumble_favorite_add_btn = QPushButton("Favorit +")
+        self.mumble_favorite_edit_btn = QPushButton("Bearbeiten")
+        self.mumble_favorite_delete_btn = QPushButton("Löschen")
+        self.mumble_favorite_add_btn.clicked.connect(self._add_mumble_favorite)
+        self.mumble_favorite_edit_btn.clicked.connect(self._edit_mumble_favorite)
+        self.mumble_favorite_delete_btn.clicked.connect(self._delete_mumble_favorite)
+
         self.mumble_server = QLineEdit()
         self.mumble_server.setPlaceholderText("z. B. voice.mumble-funk.de")
         self.mumble_port = QSpinBox()
@@ -650,6 +695,14 @@ class MainWindow(QMainWindow):
         self.mumble_native_current_channel = QLabel("—")
 
         mf.addRow("", self.mumble_enabled)
+        favrow = QWidget()
+        favlay = QHBoxLayout(favrow)
+        favlay.setContentsMargins(0, 0, 0, 0)
+        favlay.addWidget(self.mumble_favorite_select, 1)
+        favlay.addWidget(self.mumble_favorite_add_btn)
+        favlay.addWidget(self.mumble_favorite_edit_btn)
+        favlay.addWidget(self.mumble_favorite_delete_btn)
+        mf.addRow("Favoriten:", favrow)
         mf.addRow("Server:", self.mumble_server)
         mf.addRow("Port:", self.mumble_port)
         mf.addRow("Start-Channel:", self.mumble_channel)
@@ -973,8 +1026,194 @@ class MainWindow(QMainWindow):
         self._refresh_mumble_certificates()
 
         self.integration_tabs.addTab(mumble, "Mumble")
+        self._refresh_mumble_favorites(select_id="mumble_funk_main")
 
         self._scroll_tab(page, "Integrationen")
+
+    @staticmethod
+    def _normalize_mumble_favorites(items):
+        fixed = dict(DEFAULT_MUMBLE_FAVORITES[0])
+        result = [fixed]
+        seen = {fixed["id"]}
+
+        for raw in list(items or []):
+            if not isinstance(raw, dict):
+                continue
+            host = str(raw.get("host") or "").strip()
+            name = str(raw.get("name") or host).strip()
+            if not host or not name:
+                continue
+            try:
+                port = int(raw.get("port") or 64738)
+            except Exception:
+                port = 64738
+            if not (1 <= port <= 65535):
+                port = 64738
+
+            item_id = str(raw.get("id") or "").strip()
+            if not item_id:
+                item_id = f"user_{abs(hash((name.casefold(), host.casefold(), port)))}"
+            if item_id == fixed["id"] or item_id in seen:
+                continue
+            seen.add(item_id)
+            result.append({
+                "id": item_id,
+                "name": name,
+                "host": host,
+                "port": port,
+                "locked": False,
+            })
+        return result
+
+    def _refresh_mumble_favorites(self, select_id=None):
+        if not hasattr(self, "mumble_favorite_select"):
+            return
+        self._mumble_favorites = self._normalize_mumble_favorites(
+            self._mumble_favorites
+        )
+        current_id = select_id
+        if current_id is None:
+            data = self.mumble_favorite_select.currentData()
+            if isinstance(data, dict):
+                current_id = str(data.get("id") or "")
+
+        self.mumble_favorite_select.blockSignals(True)
+        self.mumble_favorite_select.clear()
+        for item in self._mumble_favorites:
+            lock_mark = " 🔒" if item.get("locked") else ""
+            self.mumble_favorite_select.addItem(
+                f"{item['name']} — {item['host']}:{item['port']}{lock_mark}",
+                dict(item),
+            )
+        self.mumble_favorite_select.addItem(
+            "Manuell / nicht als Favorit gespeichert",
+            {"id": "__manual__", "name": "Manuell", "host": "", "port": 64738, "locked": True},
+        )
+
+        idx = -1
+        if current_id:
+            for i in range(self.mumble_favorite_select.count()):
+                data = self.mumble_favorite_select.itemData(i)
+                if isinstance(data, dict) and str(data.get("id") or "") == current_id:
+                    idx = i
+                    break
+        if idx < 0:
+            idx = 0
+        self.mumble_favorite_select.setCurrentIndex(idx)
+        self.mumble_favorite_select.blockSignals(False)
+        self._mumble_favorite_selected()
+
+    def _mumble_favorite_selected(self, *_args):
+        if not hasattr(self, "mumble_favorite_select"):
+            return
+        data = self.mumble_favorite_select.currentData()
+        if not isinstance(data, dict):
+            return
+        is_manual = data.get("id") == "__manual__"
+        locked = bool(data.get("locked"))
+
+        if not is_manual:
+            self.mumble_server.setText(str(data.get("host") or ""))
+            self.mumble_port.setValue(int(data.get("port") or 64738))
+
+        self.mumble_favorite_edit_btn.setEnabled(not locked and not is_manual)
+        self.mumble_favorite_delete_btn.setEnabled(not locked and not is_manual)
+
+    def _prompt_mumble_favorite(self, title, existing=None):
+        existing = existing or {}
+        name, ok = QInputDialog.getText(
+            self, title, "Name:",
+            QLineEdit.EchoMode.Normal,
+            str(existing.get("name") or ""),
+        )
+        if not ok or not name.strip():
+            return None
+        host, ok = QInputDialog.getText(
+            self, title, "Server / Hostname:",
+            QLineEdit.EchoMode.Normal,
+            str(existing.get("host") or self.mumble_server.text().strip()),
+        )
+        if not ok or not host.strip():
+            return None
+        port, ok = QInputDialog.getInt(
+            self, title, "Port:",
+            int(existing.get("port") or self.mumble_port.value() or 64738),
+            1, 65535, 1,
+        )
+        if not ok:
+            return None
+        return {
+            "name": name.strip(),
+            "host": host.strip(),
+            "port": int(port),
+        }
+
+    def _add_mumble_favorite(self):
+        values = self._prompt_mumble_favorite("Mumble-Favorit hinzufügen")
+        if not values:
+            return
+        item = {
+            "id": f"user_{time.time_ns()}",
+            **values,
+            "locked": False,
+        }
+        self._mumble_favorites.append(item)
+        self._refresh_mumble_favorites(select_id=item["id"])
+        self._save_config()
+
+    def _edit_mumble_favorite(self):
+        data = self.mumble_favorite_select.currentData()
+        if not isinstance(data, dict) or data.get("locked") or data.get("id") == "__manual__":
+            return
+        values = self._prompt_mumble_favorite("Mumble-Favorit bearbeiten", data)
+        if not values:
+            return
+        item_id = str(data.get("id") or "")
+        for item in self._mumble_favorites:
+            if str(item.get("id") or "") == item_id:
+                item.update(values)
+                break
+        self._refresh_mumble_favorites(select_id=item_id)
+        self._save_config()
+
+    def _delete_mumble_favorite(self):
+        data = self.mumble_favorite_select.currentData()
+        if not isinstance(data, dict) or data.get("locked") or data.get("id") == "__manual__":
+            return
+        answer = QMessageBox.question(
+            self,
+            "Mumble-Favorit löschen",
+            f"Favorit „{data.get('name','')}“ wirklich löschen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        item_id = str(data.get("id") or "")
+        self._mumble_favorites = [
+            item for item in self._mumble_favorites
+            if str(item.get("id") or "") != item_id
+        ]
+        self._refresh_mumble_favorites(select_id="mumble_funk_main")
+        self._save_config()
+
+    def _select_mumble_favorite_for_server(self, host, port):
+        if not hasattr(self, "mumble_favorite_select"):
+            return
+        host = str(host or "").strip().casefold()
+        try:
+            port = int(port)
+        except Exception:
+            port = 64738
+        match = "__manual__"
+        for item in self._mumble_favorites:
+            if (
+                str(item.get("host") or "").strip().casefold() == host
+                and int(item.get("port") or 64738) == port
+            ):
+                match = str(item.get("id") or "")
+                break
+        self._refresh_mumble_favorites(select_id=match)
 
     def _test_mumble(self):
         info = self.mumble_backend.process_info()
@@ -1291,8 +1530,11 @@ class MainWindow(QMainWindow):
         server = item.data(0, Qt.ItemDataRole.UserRole)
         if not isinstance(server, dict):
             return
-        self.mumble_server.setText(str(server.get("host") or ""))
-        self.mumble_port.setValue(int(server.get("port") or 64738))
+        selected_host = str(server.get("host") or "")
+        selected_port = int(server.get("port") or 64738)
+        self.mumble_server.setText(selected_host)
+        self.mumble_port.setValue(selected_port)
+        self._select_mumble_favorite_for_server(selected_host, selected_port)
         self.mumble_public_status.setText(
             "Übernommen: " + str(server.get("name") or server.get("host") or "")
         )
@@ -3586,8 +3828,16 @@ class MainWindow(QMainWindow):
             mumble_cfg = data.get("mumble", {})
             if hasattr(self, "mumble_enabled"):
                 self.mumble_enabled.setChecked(bool(mumble_cfg.get("enabled", True)))
-                self.mumble_server.setText(str(mumble_cfg.get("server", "")))
-                self.mumble_port.setValue(int(mumble_cfg.get("port", 64738)))
+                saved_favorites = mumble_cfg.get("favorites")
+                if isinstance(saved_favorites, list) and saved_favorites:
+                    self._mumble_favorites = self._normalize_mumble_favorites(saved_favorites)
+                else:
+                    self._mumble_favorites = [dict(item) for item in DEFAULT_MUMBLE_FAVORITES]
+                saved_server = str(mumble_cfg.get("server", "voice.mumble-funk.de"))
+                saved_port = int(mumble_cfg.get("port", 64738))
+                self.mumble_server.setText(saved_server)
+                self.mumble_port.setValue(saved_port)
+                self._select_mumble_favorite_for_server(saved_server, saved_port)
                 self.mumble_user.setText(str(mumble_cfg.get("user", "")))
                 self.mumble_channel.setText(str(mumble_cfg.get("channel", "")))
                 if hasattr(self, "mumble_native_enabled"):
@@ -3713,6 +3963,16 @@ class MainWindow(QMainWindow):
                 "enabled": self.mumble_enabled.isChecked() if hasattr(self, "mumble_enabled") else True,
                 "server": self.mumble_server.text().strip() if hasattr(self, "mumble_server") else "",
                 "port": self.mumble_port.value() if hasattr(self, "mumble_port") else 64738,
+                "favorites": [
+                    {
+                        "id": str(item.get("id") or ""),
+                        "name": str(item.get("name") or ""),
+                        "host": str(item.get("host") or ""),
+                        "port": int(item.get("port") or 64738),
+                        "locked": bool(item.get("locked", False)),
+                    }
+                    for item in getattr(self, "_mumble_favorites", [])
+                ],
                 "user": self.mumble_user.text().strip() if hasattr(self, "mumble_user") else "",
                 "channel": self.mumble_channel.text().strip() if hasattr(self, "mumble_channel") else "",
                 "native_enabled": self.mumble_native_enabled.isChecked() if hasattr(self, "mumble_native_enabled") else False,
