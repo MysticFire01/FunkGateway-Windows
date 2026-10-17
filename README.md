@@ -248,3 +248,11 @@ the PTT / Modem page.
 In PC-user mode the FRN PTT button follows the normal blue mode color while idle.
 During an actual FRN transmission it switches to a high-visibility red state,
 including transmissions started by local/global hotkeys or latch mode.
+
+
+## FRN hotkey latency 0.2.4
+
+Local PTT hotkeys are fully event-driven, including modifier-only keys such as
+Ctrl, Alt and Shift. The previous modifier polling path is no longer used.
+Global pynput hotkeys cache their token set and local PTT is force-released if
+the application loses focus while a key is held.
