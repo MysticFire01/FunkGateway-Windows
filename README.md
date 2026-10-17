@@ -241,3 +241,10 @@ implemented separately.
 Selected tabs now follow the operating-mode accent color. The permanent FRN PTT
 button is only shown in PC-user mode; gateway hardware PTT remains available on
 the PTT / Modem page.
+
+
+## FRN TX indicator 0.2.3
+
+In PC-user mode the FRN PTT button follows the normal blue mode color while idle.
+During an actual FRN transmission it switches to a high-visibility red state,
+including transmissions started by local/global hotkeys or latch mode.
