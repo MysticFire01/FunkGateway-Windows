@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.5 Portable Preview
+
+- Windows FRN-Audio: `libgsm.dll` wird direkt im portablen Release mitgeliefert
+- DLL stammt aus dem MSYS2-Paket `mingw-w64-x86_64-gsm`
+- FunkGateway lädt die DLL unter Windows bevorzugt per absolutem Pfad neben der EXE
+- GitHub Actions prüft vor dem Release, dass die DLL geladen werden kann
+- GitHub Actions prüft ausdrücklich `GSM_OPT_WAV49`, bevor der Release veröffentlicht wird
+- Lizenzdatei von libgsm wird im Release mitgeliefert
+- Ziel: FRN RX/TX-Audio ohne manuelle DLL-Installation
+
 ## 0.1.4 Portable Preview
 
 - Windows-Updater: SSL/CERTIFICATE_VERIFY_FAILED in der PyInstaller-EXE behoben
