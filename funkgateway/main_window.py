@@ -21,7 +21,7 @@ from .global_hotkey import GlobalPttHotkey
 from .hotkeys import LocalPttHotkey, ModifierHoldWatcher
 from .integrations.frn_panel import FrnPanel, HotkeyCaptureButton
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
-from .ptt import DryPTT, SerialPTT, serial_ports
+from .ptt import DryPTT, SerialPTT, SafetyPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
 from .integrations.mumble_windows import MumbleWindowsBackend
 from .integrations.mumble_native import MumbleNativeGateway
@@ -35,6 +35,7 @@ from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_d
 from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge, PLUGIN_VERSION as TS_PLUGIN_VERSION
 from .tx_audio import AudioTxEngine, SoundInputTxSource
 from .wasapi_loopback import WasapiSystemLoopbackSource
+from .dtmf import DtmfDecoder
 
 
 DEFAULT_MUMBLE_FAVORITES = [
@@ -95,6 +96,8 @@ class UpdateWorker(QObject):
 class MainWindow(QMainWindow):
     """Windows shell aligned with the Linux FunkGateway 0.6 UI."""
 
+    gatewaySafetyEvent = Signal(str, str)
+
     def __init__(self):
         super().__init__()
         ensure_cfg()
@@ -136,6 +139,12 @@ class MainWindow(QMainWindow):
         self.radio_rx_detector.level.connect(self._radio_rx_level_changed)
         self.radio_rx_detector.error.connect(self._radio_rx_error)
         self.radio_rx_active = False
+        self.dtmf_decoder = DtmfDecoder(self)
+        self.radio_rx_detector.pcm.connect(self.dtmf_decoder.process_pcm)
+        self.dtmf_decoder.digit.connect(self._dtmf_digit_received)
+        self.dtmf_decoder.command.connect(self._dtmf_command_received)
+        self.dtmf_decoder.status.connect(self._dtmf_status_changed)
+        self.gatewaySafetyEvent.connect(self._gateway_safety_event)
         self.radio_audio_bridge = RadioAudioBridge(self)
         self.radio_audio_bridge.error.connect(self._radio_bridge_error)
         self.radio_audio_bridge.state.connect(self._radio_bridge_state_changed)
