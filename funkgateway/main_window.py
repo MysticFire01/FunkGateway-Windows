@@ -3333,6 +3333,11 @@ class MainWindow(QMainWindow):
         valid_pin = pin.isdigit() and 4 <= len(pin) <= 8
         enabled = self.dtmf_enabled.isChecked() and valid_pin
         self.dtmf_decoder.configure(enabled=enabled)
+        if enabled and self._mode() in ("gateway", "radio_parrot"):
+            if hasattr(self, "radio_rx_detector") and not self.radio_rx_detector.running:
+                self._start_radio_rx_detector()
+        elif not enabled and not self.gateway_started:
+            self._stop_radio_rx_detector()
         if not self.dtmf_enabled.isChecked():
             self.dtmf_status.setText("DTMF: aus")
         elif not valid_pin:
@@ -3483,7 +3488,17 @@ class MainWindow(QMainWindow):
         if hasattr(self, "start_main_btn"):
             self.start_main_btn.setEnabled(True)
             self.stop_main_btn.setEnabled(False)
-        self._stop_radio_rx_detector()
+        if not (
+            hasattr(self, "dtmf_decoder")
+            and self.dtmf_decoder.enabled
+            and self._mode() in ("gateway", "radio_parrot")
+        ):
+            self._stop_radio_rx_detector()
+        else:
+            if not self.radio_rx_detector.running:
+                self._start_radio_rx_detector()
+            if hasattr(self, "ts_rx_state_label"):
+                self.ts_rx_state_label.setText("Funk-RX: nur DTMF-Fernsteuerung aktiv")
         self._stop_radio_audio_bridge()
         if self.ts_commander_auto.isChecked() and self.ts_commander_state:
             self._set_ts_commander_state(False, "Gateway gestoppt")
@@ -4247,6 +4262,14 @@ class MainWindow(QMainWindow):
             self.ts_rx_state_label.setText(
                 "Funk-RX: AKTIV" if active else "Funk-RX: frei"
             )
+
+        if not self.gateway_started:
+            if hasattr(self, "dtmf_decoder") and self.dtmf_decoder.enabled:
+                self.ts_rx_state_label.setText(
+                    "Funk-RX: DTMF erkannt" if active
+                    else "Funk-RX: nur DTMF-Fernsteuerung aktiv"
+                )
+            return
 
         # Audio forwarding follows real Funk-RX activity, independently from
         # Channel Commander. The bridge may stay open/ready, but it sends no
