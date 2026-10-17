@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.13 – TeamSpeak-Audio nur bei echtem Funk-RX
+
+- TS3-Plugin-Brücke bleibt im Gateway nur bereit, statt dauerhaft Audio zu senden
+- PCM-Weiterleitung startet erst bei erkanntem Funk-RX
+- bei Funk-RX frei wird sofort kein PCM mehr an TeamSpeak gesendet
+- RX-Nachlauf des Detektors bestimmt damit auch das Ende der TeamSpeak-Aussendung
+- Channel Commander bleibt weiterhin unabhängig optional
+- Status unterscheidet nun „Brücke bereit“ und „SENDEN“
+
 ## 0.2.12 – TeamSpeak-Audioweiterleitung live schaltbar
 
 - „Funk-RX Audio nach TeamSpeak weiterleiten“ wirkt jetzt sofort
