@@ -118,6 +118,8 @@ class MainWindow(QMainWindow):
         self._mumble_public_source = ""
         self._mumble_public_source_detail = ""
         self._mumble_pc_ptt_active = False
+        self._mumble_current_channel_name = ""
+        self._mumble_current_speakers = []
         self._mumble_favorites = [dict(item) for item in DEFAULT_MUMBLE_FAVORITES]
         self.ts_last_status = None
         self.ts_last_speakers = []
@@ -1402,12 +1404,7 @@ class MainWindow(QMainWindow):
         finally:
             self.mumble_native_connect_btn.setEnabled(True)
             self.mumble_native_disconnect_btn.setEnabled(False)
-            if hasattr(self, "mumble_participants_all"):
-                self.mumble_participants_all.setRowCount(0)
-                self.mumble_participants_channel.setRowCount(0)
-            if hasattr(self, "mumble_tx_meter"):
-                self.mumble_tx_meter.setValue(0)
-                self.mumble_rx_meter.setValue(0)
+            self._clear_mumble_runtime_views()
             if self._mumble_owns_tx_engine:
                 self.tx_audio_engine.stop()
                 self._mumble_owns_tx_engine = False
@@ -1853,6 +1850,43 @@ class MainWindow(QMainWindow):
         if hasattr(self, "status_mumble") and self.mumble_native.connected:
             self.status_mumble.setText("Mumble: Native Gateway verbunden")
 
+    def _clear_mumble_runtime_views(self):
+        self._mumble_current_channel_name = ""
+        self._mumble_current_speakers = []
+
+        if hasattr(self, "mumble_channel_tree"):
+            self.mumble_channel_tree.clear()
+        if hasattr(self, "mumble_participants_all"):
+            self.mumble_participants_all.setRowCount(0)
+        if hasattr(self, "mumble_participants_channel"):
+            self.mumble_participants_channel.setRowCount(0)
+        if hasattr(self, "mumble_native_speakers"):
+            self.mumble_native_speakers.setText("Aktive Sprecher: —")
+        if hasattr(self, "mumble_native_current_channel"):
+            self.mumble_native_current_channel.setText("—")
+        if hasattr(self, "mumble_tx_meter"):
+            self.mumble_tx_meter.setValue(0)
+        if hasattr(self, "mumble_rx_meter"):
+            self.mumble_rx_meter.setValue(0)
+        if hasattr(self, "mumble_rx_level_label"):
+            self.mumble_rx_level_label.setText("Funk → Mumble: < -60 dBFS")
+        if hasattr(self, "mumble_network_rx_level_label"):
+            self.mumble_network_rx_level_label.setText("Mumble → Funk: < -60 dBFS")
+        if hasattr(self, "mumble_rx_state_label"):
+            self.mumble_rx_state_label.setText("Funk-RX: frei")
+        if hasattr(self, "mumble_pc_ptt_btn"):
+            self.mumble_pc_ptt_btn.setText("Mumble PTT halten")
+            self.mumble_pc_ptt_btn.setStyleSheet("")
+        if hasattr(self, "mumble_ptt_top_btn"):
+            self.mumble_ptt_top_btn.setText("Mumble PTT")
+            self.mumble_ptt_top_btn.setStyleSheet("")
+            self.mumble_ptt_top_btn.setVisible(False)
+            self.mumble_ptt_top_btn.setEnabled(False)
+
+        self._mumble_pc_ptt_active = False
+        self.status_mumble.setText("Mumble: getrennt")
+        self._update_live_status()
+
     def _mumble_native_connected_changed(self, connected):
         connected = bool(connected)
         if hasattr(self, "mumble_native_connect_btn"):
@@ -1882,26 +1916,42 @@ class MainWindow(QMainWindow):
             )
         self._configure_mumble_hotkey()
         if connected:
-            self.status_mumble.setText("Mumble: Native Gateway verbunden")
+            self.status_mumble.setText("Mumble: verbunden")
+            self._update_live_status()
             QTimer.singleShot(600, self._refresh_mumble_native_channels)
             self._ensure_mumble_radio_tx_engine()
         else:
             if hasattr(self, "mumble_native_status_label"):
                 self.mumble_native_status_label.setText("Native Mumble: getrennt")
+            self._clear_mumble_runtime_views()
             if self._mumble_owns_tx_engine:
                 self.tx_audio_engine.stop()
                 self._mumble_owns_tx_engine = False
 
     def _mumble_native_channel_changed(self, channel):
+        self._mumble_current_channel_name = str(channel or "").strip()
         if hasattr(self, "mumble_native_current_channel"):
-            self.mumble_native_current_channel.setText(str(channel or "—"))
+            self.mumble_native_current_channel.setText(
+                self._mumble_current_channel_name or "—"
+            )
+        if self.mumble_native.connected:
+            self.status_mumble.setText(
+                "Mumble: verbunden"
+                + (
+                    " · " + self._mumble_current_channel_name
+                    if self._mumble_current_channel_name else ""
+                )
+            )
+        self._update_live_status()
 
     def _mumble_native_speakers_changed(self, speakers):
         names = list(speakers or [])
+        self._mumble_current_speakers = names
         if hasattr(self, "mumble_native_speakers"):
             self.mumble_native_speakers.setText(
                 "Aktive Sprecher: " + (", ".join(names) if names else "—")
             )
+        self._update_live_status()
 
     @staticmethod
     def _mumble_mouth_icon(kind):
@@ -3367,14 +3417,32 @@ class MainWindow(QMainWindow):
             "radio_parrot": "Funk-Papagei", "voip_parrot": "VoIP-Papagei",
         }
         frn = "verbunden" if getattr(self.frn_panel, "connected", False) else "getrennt"
+        mumble_connected = bool(getattr(self.mumble_native, "connected", False))
+        mumble = "verbunden" if mumble_connected else "getrennt"
+
+        parts = [
+            mode_names.get(self._mode(), "PC-User"),
+            f"FRN {frn}",
+            f"Mumble {mumble}",
+        ]
+
+        if mumble_connected and self._mumble_current_channel_name:
+            parts.append(f"Mumble-Channel: {self._mumble_current_channel_name}")
+        if mumble_connected and self._mumble_current_speakers:
+            parts.append("Sprecher: " + ", ".join(self._mumble_current_speakers[:3]))
+
         if self._mode() == "pc":
-            tx = "TX" if getattr(self.frn_panel, "ptt_active", False) else "PTT aus"
+            if getattr(self.frn_panel, "ptt_active", False):
+                parts.append("FRN TX")
+            elif getattr(self, "_mumble_pc_ptt_active", False):
+                parts.append("Mumble TX")
+            else:
+                parts.append("PTT aus")
         else:
-            tx = "Gateway PTT bereit" if self.gateway_started else "Gateway PTT aus"
-        self.live_status_bar.setText(
-            f"{mode_names.get(self._mode(), 'PC-User')}  ·  FRN {frn}  ·  {tx}  ·  "
-            "Windows-Port 0.2"
-        )
+            parts.append("Gateway PTT bereit" if self.gateway_started else "Gateway PTT aus")
+
+        parts.append("Windows-Port 0.2")
+        self.live_status_bar.setText("  ·  ".join(parts))
 
     # ------------------------------------------------------------ Funk-RX
     def _refresh_ts_rx_inputs(self):
