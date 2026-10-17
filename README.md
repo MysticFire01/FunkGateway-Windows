@@ -313,3 +313,10 @@ Windows system audio can be captured through the bundled native WASAPI loopback
 helper. This allows applications such as TeamSpeak, VLC, browsers and media
 players to use the same generic radio TX path. A normal microphone/USB audio
 input can also be selected for testing without radio hardware.
+
+
+## Funk RX independence 0.2.11
+
+Radio RX detection is now independent from TeamSpeak Channel Commander. The
+commander option only mirrors an already detected RX state to TeamSpeak; it no
+longer starts or stops the detector itself.
