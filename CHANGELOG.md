@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.7 Portable Preview
+
+- Windows FRN-TX nimmt das Mikrofon nicht mehr starr mit 8 kHz auf
+- native/default Sample-Rate des gewählten Eingabegeräts wird automatisch ermittelt
+- Mikrofon-Audio wird intern auf FRN 8 kHz mono heruntergerechnet
+- TX-Pegelanzeige zeigt den echten Eingangspegel vor dem Resampling
+- behebt Geräte, die bei direkter 8-kHz-Aufnahme unter Windows nur Stille liefern
+- GSM-WAV49, portabler Updater und update.log bleiben erhalten
+
 ## 0.1.6 Portable Preview
 
 - Selbstupdater: Windows-Pfade werden korrekt als PowerShell-Literale übergeben
