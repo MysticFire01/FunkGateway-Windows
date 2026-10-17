@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.31 – Mumble PC-PTT, Teilnehmerstatus und Zertifikate
+
+- PC-User-Modus erhält eigene Mumble-Mikrofon-PTT
+- native Mumble-Verbindung kann das Mikrofon nur während gedrückter PTT senden
+- Teilnehmeransicht in „Aktueller Channel“ und „Gesamter Server“ getrennt
+- Mundsymbol wird direkt mit Qt gezeichnet:
+  - grün = spricht nicht
+  - rot = spricht
+  - blau = flüstert / Whisper
+- keine zusätzlichen Icon- oder GUI-Bibliotheken nötig
+- lokale Mute/Deaf-Zustände getrennt von serverseitigen Mute/Deaf-Zuständen
+- neue Mumble-Unterseite „Zertifikate“
+- selbstsigniertes Client-Zertifikat direkt in FunkGateway erzeugbar
+- P12/PFX importierbar
+- PEM Zertifikat + privater Schlüssel importierbar
+- SHA-256-Fingerprint und Gültigkeit werden angezeigt
+- Zertifikate portabel im FunkGateway-Konfigurationsordner
+- aktueller nativer Mumble-Benutzer kann mit Zertifikat zur Registrierung angemeldet werden
+- Zertifikatsunterstützung nutzt nur cryptography zusätzlich; kein separates OpenSSL-Programm nötig
+- PySide6/Qt war bereits Bestandteil von FunkGateway und wird für die Mundsymbole wiederverwendet
+
 ## 0.2.30 – Opus-DLL unter Windows zuverlässig laden
 
 - behebt „Could not find Opus library“
