@@ -486,3 +486,12 @@ FunkGateway augments the public registry metadata with Mumble's lightweight UDP
 server ping, which can report the current/max user count and round-trip time
 without joining the server. A selected public server can be copied directly
 into the native Mumble connection settings.
+
+
+## Windows native-Mumble build fix 0.2.28
+
+The Windows build now vendors the `pymumble_py3` package directory from the
+official azlux/pymumble 1.6.1 tag during GitHub Actions. This avoids a Windows /
+Python 3.12 packaging problem where the PyPI distribution was installed but the
+expected top-level `pymumble_py3` module was not importable in the build job.
+The import is validated before PyInstaller runs.
