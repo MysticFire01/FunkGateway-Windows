@@ -265,3 +265,10 @@ read-only mode. It can detect the running local TS3 client, show the current
 channel and list active speakers. Windows AppData locations are searched for
 clientquery.ini/API keys automatically. Control actions remain disabled until
 the read-only path is verified.
+
+
+## TeamSpeak control 0.2.6
+
+The Windows TeamSpeak page now shows server identity and the local TS client,
+loads visible channels, can move the local client to a selected channel and can
+toggle Channel Commander. Active speakers are presented as a live list.
