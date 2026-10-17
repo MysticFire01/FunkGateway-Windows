@@ -223,16 +223,22 @@ try {{
         # Use cmd.exe START instead of DETACHED_PROCESS. START creates an
         # independent process that survives the GUI/PyInstaller parent exit
         # more reliably on older Windows 10 installations.
-        cmdline = subprocess.list2cmdline([
-            "powershell.exe",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(script),
-        ])
         subprocess.Popen(
-            ["cmd.exe", "/d", "/s", "/c", "start", '""', "/b", cmdline],
+            [
+                "cmd.exe",
+                "/d",
+                "/s",
+                "/c",
+                "start",
+                "",
+                "/b",
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+            ],
             cwd=str(helper_dir),
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
