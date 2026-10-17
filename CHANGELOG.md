@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.2.54 – Gateway-Schutz, Rücklaufsperre und DTMF-Steuerung
+
+- Mumble-Serverliste versucht die vollständige offizielle Publist jetzt über drei Wege:
+  - QtNetwork wie der Mumble-Client
+  - Windows curl.exe mit HTTP/1.1
+  - certifi/urllib als weiterer Fallback
+- erst danach wird auf die bekannte kleinere 50er-Liste zurückgefallen
+- Quellenanzeige in der Oberfläche bleibt erhalten
+
+### Gateway-Schutzfunktionen
+
+- neuer integrationsunabhängiger PTT-Sicherheitswrapper
+- maximale TX-Dauer / TOT, Standard 180 Sekunden
+- Mindestpause nach einer Aussendung, Standard 1200 ms
+- Schutz greift sowohl bei automatischer Audio-PTT als auch manueller Gateway-PTT
+- TOT löst die Hardware-PTT auch dann, wenn eine Audioquelle hängen bleibt
+- NOT-AUS bleibt zusätzlich unverändert vorhanden
+
+### Rücklaufschutz gegen Gateway-Ploppen
+
+- nach jedem TX-Ende einstellbare RX-Sperre, Standard 900 ms
+- während der Sperre wird ein Umschaltknackser nicht als neuer RX gewertet
+- gilt für:
+  - Funk-RX Aktivitätsdetektor
+  - TeamSpeak Geräte-Audiobrücke
+  - nativen Funk-RX → Mumble Weg
+- RX muss zusätzlich eine einstellbare Zeit stabil oberhalb der Schwelle liegen
+  - Standard 100 ms
+- kurze Knackser und einzelne Pegelspitzen reichen damit nicht mehr zum Wiederauftasten
+
+### DTMF-Fernsteuerung
+
+- neuer eigener DTMF-Decoder ohne zusätzliche Bibliothek
+- Goertzel-Auswertung wird intern auf 8 kHz reduziert und bleibt leichtgewichtig
+- DTMF ist standardmäßig ausgeschaltet
+- 4–8-stellige PIN erforderlich
+- Befehle:
+  - *PIN*1# = Gateway starten
+  - *PIN*0# = Gateway stoppen
+  - *PIN*9# = NOT-AUS / PTT AUS
+- DTMF-Empfang bleibt nach einem Fern-Stopp aktiv, damit das Gateway wieder per Funk gestartet werden kann
+- DTMF-Ereignisse und autorisierte Befehle werden im Log sichtbar
+- Schutz- und DTMF-Einstellungen werden portabel in config.json gespeichert
+
 ## 0.2.53 – Lokales Mumble-Mute unterdrückt Audio wirklich
 
 - behebt lokale Benutzer-Stummschaltung im nativen Mumble-Client
