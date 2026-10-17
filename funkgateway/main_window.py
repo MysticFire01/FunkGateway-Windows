@@ -1440,15 +1440,42 @@ class MainWindow(QMainWindow):
             time.sleep(0.15)
         return not self._teamspeak_running()
 
+    def _teamspeak_plugin_client_active(self):
+        """Return True only when the actual TS client/plugin path is still alive.
+
+        Process-name checks can see launchers/updaters or stale helper processes.
+        For plugin replacement the important question is whether the loaded
+        FunkGateway plugin / ClientQuery endpoint is still active.
+        """
+        try:
+            if self.ts_plugin_bridge.probe(timeout=0.10):
+                return True
+        except Exception:
+            pass
+
+        try:
+            self._configure_teamspeak()
+            self.ts_client.test()
+            return True
+        except Exception:
+            try:
+                self.ts_client.close()
+            except Exception:
+                pass
+            return False
+
     def _prepare_teamspeak_for_plugin_install(self):
-        if not self._teamspeak_running():
+        process_running = self._teamspeak_running()
+        client_active = self._teamspeak_plugin_client_active()
+        if not process_running and not client_active:
             return True
 
         answer = QMessageBox.question(
             self,
             "TeamSpeak schließen",
             "TeamSpeak 3 läuft noch.\n\n"
-            "Für eine saubere Plugin-Installation/Aktualisierung muss TeamSpeak beendet werden.\n\n"
+            "Für eine saubere Plugin-Installation/Aktualisierung muss der "
+            "TeamSpeak-Client beendet und das Plugin entladen werden.\n\n"
             "TeamSpeak jetzt automatisch schließen?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
@@ -1456,14 +1483,20 @@ class MainWindow(QMainWindow):
         if answer != QMessageBox.StandardButton.Yes:
             return False
 
-        if self._close_teamspeak_normally():
-            self.ui_log.appendPlainText("TeamSpeak wurde für das Plugin-Update beendet.")
+        self._close_teamspeak_normally()
+
+        # If plugin and ClientQuery are already gone, the plugin DLL is no
+        # longer loaded. A launcher/helper process must not block installation.
+        if not self._teamspeak_plugin_client_active():
+            self.ui_log.appendPlainText(
+                "TeamSpeak Client/Plugin beendet; eventuell verbleibender Helferprozess wird ignoriert."
+            )
             return True
 
         force = QMessageBox.question(
             self,
             "TeamSpeak läuft noch",
-            "TeamSpeak läuft nach dem normalen Schließen noch im Hintergrund weiter.\n\n"
+            "Der eigentliche TeamSpeak-Client bzw. das FunkGateway-Plugin ist noch aktiv.\n\n"
             "TeamSpeak-Prozess jetzt beenden, damit das Plugin aktualisiert werden kann?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -1471,18 +1504,22 @@ class MainWindow(QMainWindow):
         if force != QMessageBox.StandardButton.Yes:
             return False
 
-        if self._force_close_teamspeak():
-            self.ui_log.appendPlainText("TeamSpeak wurde für das Plugin-Update zwangsweise beendet.")
+        self._force_close_teamspeak()
+
+        if not self._teamspeak_plugin_client_active():
+            self.ui_log.appendPlainText(
+                "TeamSpeak Client/Plugin wurde für das Plugin-Update beendet."
+            )
             return True
 
         self.ui_log.appendPlainText(
-            "TeamSpeak Plugin: TS3-Prozess nach normalem und erzwungenem Beenden noch aktiv."
+            "TeamSpeak Plugin: ClientQuery/Plugin antwortet nach normalem und erzwungenem Beenden weiter."
         )
         QMessageBox.critical(
             self,
             "TeamSpeak Plugin",
-            "TeamSpeak konnte auch nach dem erzwungenen Beenden nicht beendet werden.\n\n"
-            "Bitte TeamSpeak im Task-Manager schließen und die Plugin-Installation danach erneut starten."
+            "Der eigentliche TeamSpeak-Client oder das FunkGateway-Plugin ist weiterhin aktiv.\n\n"
+            "Bitte TeamSpeak vollständig von Hand schließen und die Plugin-Installation danach erneut starten."
         )
         return False
 
