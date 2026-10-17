@@ -203,6 +203,7 @@ class MainWindow(QMainWindow):
         self._apply_theme_from_ui()
         self._configure_hotkey()
         self._configure_mumble_hotkey()
+        self._configure_dtmf()
         self._update_live_status()
 
     # ------------------------------------------------------------------ UI
@@ -3443,6 +3444,14 @@ class MainWindow(QMainWindow):
             self._start_radio_rx_detector()
             self._start_radio_audio_bridge()
             self._ensure_mumble_radio_tx_engine()
+            try:
+                if self.mumble_native.connected and hasattr(self, "mumble_radio_to_net"):
+                    self.mumble_native.set_radio_to_mumble(
+                        self.mumble_radio_to_net.isChecked(),
+                        confirm_ms=self.gateway_rx_confirm.value(),
+                    )
+            except Exception:
+                pass
             self._update_live_status()
         except Exception as exc:
             self.gateway_ptt = None
@@ -4645,6 +4654,15 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self.gateway_ptt_line.setCurrentIndex(idx)
             self.gateway_ptt_invert.setChecked(bool(ptt_cfg.get("invert", False)))
+            if hasattr(self, "gateway_safety_enabled"):
+                self.gateway_safety_enabled.setChecked(bool(ptt_cfg.get("safety_enabled", True)))
+                self.gateway_tot.setValue(int(ptt_cfg.get("tot_s", 180)))
+                self.gateway_min_pause.setValue(int(ptt_cfg.get("min_pause_ms", 1200)))
+                self.gateway_return_guard.setValue(int(ptt_cfg.get("return_guard_ms", 900)))
+                self.gateway_rx_confirm.setValue(int(ptt_cfg.get("rx_confirm_ms", 100)))
+                self.dtmf_enabled.setChecked(bool(ptt_cfg.get("dtmf_enabled", False)))
+                self.dtmf_pin.setText(str(ptt_cfg.get("dtmf_pin", "")))
+                self._configure_dtmf()
             ts_cfg = data.get("teamspeak", {})
             if hasattr(self, "ts_host"):
                 self.ts_host.setText(str(ts_cfg.get("host", "127.0.0.1")))
@@ -4707,6 +4725,13 @@ class MainWindow(QMainWindow):
                 ),
                 "line": self.gateway_ptt_line.currentText(),
                 "invert": self.gateway_ptt_invert.isChecked(),
+                "safety_enabled": self.gateway_safety_enabled.isChecked(),
+                "tot_s": self.gateway_tot.value(),
+                "min_pause_ms": self.gateway_min_pause.value(),
+                "return_guard_ms": self.gateway_return_guard.value(),
+                "rx_confirm_ms": self.gateway_rx_confirm.value(),
+                "dtmf_enabled": self.dtmf_enabled.isChecked(),
+                "dtmf_pin": self.dtmf_pin.text().strip(),
             },
             "mumble": {
                 "enabled": self.mumble_enabled.isChecked() if hasattr(self, "mumble_enabled") else True,
