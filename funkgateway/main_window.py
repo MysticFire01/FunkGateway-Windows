@@ -868,6 +868,20 @@ class MainWindow(QMainWindow):
         self.mumble_native_speakers.setWordWrap(True)
         pv.addWidget(self.mumble_native_speakers)
 
+        self.mumble_self_mute_btn = QPushButton("🎙 Mikro stumm")
+        self.mumble_self_mute_btn.setCheckable(True)
+        self.mumble_self_mute_btn.toggled.connect(self._mumble_self_mute_changed)
+        self.mumble_self_deaf_btn = QPushButton("🎧 Taub / Ton aus")
+        self.mumble_self_deaf_btn.setCheckable(True)
+        self.mumble_self_deaf_btn.toggled.connect(self._mumble_self_deaf_changed)
+        self_controls = QWidget()
+        self_controls_layout = QHBoxLayout(self_controls)
+        self_controls_layout.setContentsMargins(0, 0, 0, 0)
+        self_controls_layout.addWidget(self.mumble_self_mute_btn)
+        self_controls_layout.addWidget(self.mumble_self_deaf_btn)
+        self_controls_layout.addStretch(1)
+        pv.addWidget(self_controls)
+
         self.mumble_participant_tabs = QTabWidget()
         self.mumble_participants_channel = QTableWidget(0, 4)
         self.mumble_participants_all = QTableWidget(0, 4)
@@ -1833,6 +1847,15 @@ class MainWindow(QMainWindow):
         if hasattr(self, "mumble_native_connect_btn"):
             self.mumble_native_connect_btn.setEnabled(not connected)
             self.mumble_native_disconnect_btn.setEnabled(connected)
+        if hasattr(self, "mumble_self_mute_btn"):
+            self.mumble_self_mute_btn.setEnabled(connected)
+            self.mumble_self_deaf_btn.setEnabled(connected)
+            if not connected:
+                for btn in (self.mumble_self_mute_btn, self.mumble_self_deaf_btn):
+                    btn.blockSignals(True)
+                    btn.setChecked(False)
+                    btn.blockSignals(False)
+                self._update_mumble_self_buttons(False, False)
         if hasattr(self, "mumble_pc_ptt_btn"):
             self.mumble_pc_ptt_btn.setEnabled(
                 connected and self._mode() == "pc"
@@ -1946,8 +1969,74 @@ class MainWindow(QMainWindow):
             ):
                 table.setItem(row, col, cell)
 
+    def _mumble_self_mute_changed(self, enabled):
+        enabled = bool(enabled)
+        if not self.mumble_native.connected:
+            if enabled:
+                self.mumble_self_mute_btn.blockSignals(True)
+                self.mumble_self_mute_btn.setChecked(False)
+                self.mumble_self_mute_btn.blockSignals(False)
+                self.mumble_native_status_label.setText(
+                    "Native Mumble: für Mute zuerst verbinden"
+                )
+            return
+        if enabled:
+            self._mumble_pc_ptt_release()
+        try:
+            self.mumble_native.set_self_mute(enabled)
+        except Exception as exc:
+            self._mumble_native_error("Mumble Self-Mute: " + str(exc))
+        self._update_mumble_self_buttons(enabled, self.mumble_self_deaf_btn.isChecked())
+
+    def _mumble_self_deaf_changed(self, enabled):
+        enabled = bool(enabled)
+        if not self.mumble_native.connected:
+            if enabled:
+                self.mumble_self_deaf_btn.blockSignals(True)
+                self.mumble_self_deaf_btn.setChecked(False)
+                self.mumble_self_deaf_btn.blockSignals(False)
+                self.mumble_native_status_label.setText(
+                    "Native Mumble: für Deaf zuerst verbinden"
+                )
+            return
+        try:
+            self.mumble_native.set_self_deaf(enabled)
+        except Exception as exc:
+            self._mumble_native_error("Mumble Self-Deaf: " + str(exc))
+        self._update_mumble_self_buttons(self.mumble_self_mute_btn.isChecked(), enabled)
+
+    def _update_mumble_self_buttons(self, muted, deaf):
+        if hasattr(self, "mumble_self_mute_btn"):
+            self.mumble_self_mute_btn.setText(
+                "🎙 Mikro STUMM" if muted else "🎙 Mikro stumm"
+            )
+            self.mumble_self_mute_btn.setStyleSheet(
+                "background:#E53935;color:white;font-weight:bold;" if muted else ""
+            )
+        if hasattr(self, "mumble_self_deaf_btn"):
+            self.mumble_self_deaf_btn.setText(
+                "🎧 TAUB / TON AUS" if deaf else "🎧 Taub / Ton aus"
+            )
+            self.mumble_self_deaf_btn.setStyleSheet(
+                "background:#2F80ED;color:white;font-weight:bold;" if deaf else ""
+            )
+
     def _mumble_native_participants_changed(self, participants):
         rows = list(participants or [])
+        for self_row in rows:
+            if self_row.get("is_self"):
+                muted = bool(self_row.get("local_mute"))
+                deaf = bool(self_row.get("local_deaf"))
+                if hasattr(self, "mumble_self_mute_btn"):
+                    self.mumble_self_mute_btn.blockSignals(True)
+                    self.mumble_self_mute_btn.setChecked(muted)
+                    self.mumble_self_mute_btn.blockSignals(False)
+                if hasattr(self, "mumble_self_deaf_btn"):
+                    self.mumble_self_deaf_btn.blockSignals(True)
+                    self.mumble_self_deaf_btn.setChecked(deaf)
+                    self.mumble_self_deaf_btn.blockSignals(False)
+                self._update_mumble_self_buttons(muted, deaf)
+                break
         self._update_mumble_channel_users(rows)
         if not hasattr(self, "mumble_participants_all"):
             return
