@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.21 Portable Preview**
+**0.1.22 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.21\
+FunkGateway-Windows-0.1.22\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -208,3 +208,10 @@ From 0.1.20 PC-only clients (CL=2) format the FRN `CT` login field as
 an empty CT field. This matches established FRN PC-client behavior and fixes
 `AL=BLOCK` responses from alternative servers that validate the CT field.
 After a successful login FunkGateway also sends `ST:0` after `RX0`.
+
+
+## FRN city field behavior
+
+From 0.1.22 PC-only clients (CL=2) send `CT=- -` only when the city field is
+empty. If a city is entered, FunkGateway sends exactly that city text without
+appending ` - -`.
