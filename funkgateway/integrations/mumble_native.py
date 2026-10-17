@@ -86,6 +86,7 @@ class MumbleNativeGateway(QObject):
     radioRxActivity = Signal(bool)
     radioRxLevel = Signal(float)
     networkRxLevel = Signal(float)
+    networkPcm = Signal(bytes)  # 48kHz mono PCM for the VoIP parrot
     error = Signal(str)
 
     def __init__(self, tx_engine=None, parent=None):
@@ -648,12 +649,20 @@ class MumbleNativeGateway(QObject):
             if not pcm:
                 return
             self.networkRxLevel.emit(self._dbfs(pcm))
+            self.networkPcm.emit(pcm)
             if self._playback_enabled and not self._self_deaf_local:
                 self._queue_playback(pcm)
             if self._receive_to_radio and self.tx_engine is not None:
                 self.tx_engine.push_pcm(pcm, 48000, 1, "Mumble: " + name)
         except Exception as exc:
             self.error.emit("Mumble Audio: " + str(exc))
+
+    def send_parrot_pcm(self, pcm):
+        """Queue 48kHz mono PCM to native Mumble, without audio capture or radio PTT."""
+        if not self._connected or self._mumble is None or self._self_mute_local:
+            return False
+        self._mumble.sound_output.add_sound(bytes(pcm))
+        return True
 
     def _channel_path_by_id(self, cid):
         try:
