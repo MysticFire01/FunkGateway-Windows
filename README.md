@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.15 Portable Preview**
+**0.1.16 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.15\
+FunkGateway-Windows-0.1.16\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -166,3 +166,10 @@ portable application directory. This avoids PyInstaller's temporary `_MEI...`
 extraction and the related `python312.dll` startup failures seen on some
 Windows 10 systems. The application remains fully portable and can still be
 placed on an external drive.
+
+
+## Failed-login audio cleanup
+
+From 0.1.16 every exit from the FRN network thread also stops the audio worker
+threads. This includes server BLOCK responses, login failures, protocol errors
+and remote disconnects, preventing a stale play_thread from remaining alive.
