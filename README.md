@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.6 Portable Preview**
+**0.1.7 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.6\
+FunkGateway-Windows-0.1.7\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -92,3 +92,11 @@ GSM WAV49 support.
 ## Updater diagnostics
 
 The updater writes `logs\\update.log`, uses native PowerShell path quoting, retries file replacement on short Windows locks, and never replaces `config` or `logs`.
+
+
+## Windows microphone resampling
+
+From 0.1.7, FRN TX captures the selected Windows microphone at its native/default
+sample rate (commonly 44.1 or 48 kHz) and resamples it internally to FRN's fixed
+8 kHz mono stream. This avoids silent capture on devices/drivers that do not
+behave correctly when opened directly at 8 kHz.
