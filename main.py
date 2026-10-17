@@ -3,6 +3,24 @@ import json
 import sys
 
 
+def _recover_nested_updater_packages():
+    """Compatibility with older updaters that nested _internal while copying.
+
+    The current updater copies directory contents correctly. On an existing
+    installation built by an older updater, bundled modules may nevertheless
+    be left in _internal/_internal. Recover the import path without changing
+    the user's configuration or requiring a manual reinstall.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    from pathlib import Path
+    bundled = Path(getattr(sys, "_MEIPASS", "") or "").resolve()
+    nested = bundled / "_internal"
+    if (nested / "qrcode").is_dir() and (nested / "PIL").is_dir():
+        if str(nested) not in sys.path:
+            sys.path.insert(0, str(nested))
+
+
 def _run_self_test_cert():
     from funkgateway.mumble_certificates import certificate_backend_status
     result = certificate_backend_status()
@@ -45,6 +63,7 @@ def _run_self_test_qr():
 
 
 def main():
+    _recover_nested_updater_packages()
     if "--self-test-qr" in sys.argv:
         raise SystemExit(_run_self_test_qr())
     if "--self-test-cert" in sys.argv:
