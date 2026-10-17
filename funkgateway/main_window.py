@@ -20,6 +20,7 @@ from .ptt import DryPTT, SerialPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
 from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_devices
 from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge
+from .tx_audio import AudioTxEngine, SoundInputTxSource
 
 
 class UpdateWorker(QObject):
@@ -81,6 +82,15 @@ class MainWindow(QMainWindow):
         self.ts_plugin_bridge = TeamSpeakPluginAudioBridge(
             log=lambda msg: self.ui_log.appendPlainText(msg) if hasattr(self, "ui_log") else None
         )
+        self.tx_audio_engine = AudioTxEngine(self)
+        self.tx_audio_source = SoundInputTxSource(self.tx_audio_engine, self)
+        self.tx_audio_engine.activity.connect(self._tx_audio_activity_changed)
+        self.tx_audio_engine.level.connect(self._tx_audio_level_changed)
+        self.tx_audio_engine.state.connect(self._tx_audio_engine_state_changed)
+        self.tx_audio_engine.error.connect(self._tx_audio_error)
+        self.tx_audio_engine.source.connect(self._tx_audio_source_changed)
+        self.tx_audio_source.state.connect(self._tx_audio_source_state_changed)
+        self.tx_audio_source.error.connect(self._tx_audio_error)
 
         self._build_update_menu()
         self._build_shell()
@@ -249,15 +259,75 @@ class MainWindow(QMainWindow):
     def _build_audio(self):
         page = QWidget()
         v = QVBoxLayout(page)
-        title = QLabel("<h2>Audio</h2><p>Windows-Audio und Routing.</p>")
+        title = QLabel(
+            "<h2>Audio</h2>"
+            "<p>Quellenunabhängiger Funk-TX-Audioweg. PTT reagiert auf tatsächliches TX-Audio, "
+            "nicht auf TeamSpeak oder ein bestimmtes Programm.</p>"
+        )
         title.setWordWrap(True)
         v.addWidget(title)
-        box = QGroupBox("Aktueller Stand")
-        f = QFormLayout(box)
-        f.addRow("FRN:", QLabel("RX/TX über sounddevice / PortAudio aktiv"))
-        f.addRow("Gateway-Routing:", QLabel("Portierung vom Linux-PipeWire-Modell auf Windows folgt"))
+
+        tx = QGroupBox("Generischer TX-Audiokern")
+        f = QFormLayout(tx)
+
+        self.tx_audio_enabled = QCheckBox("Audioabhängige Gateway-PTT aktiv")
+        self.tx_audio_enabled.setChecked(False)
+
+        self.tx_audio_input = QComboBox()
+        self.tx_audio_input.setMinimumWidth(320)
+        self.tx_audio_output = QComboBox()
+        self.tx_audio_output.setMinimumWidth(320)
+
+        self.tx_audio_threshold = QDoubleSpinBox()
+        self.tx_audio_threshold.setRange(-80.0, -3.0)
+        self.tx_audio_threshold.setDecimals(1)
+        self.tx_audio_threshold.setSingleStep(1.0)
+        self.tx_audio_threshold.setValue(-40.0)
+        self.tx_audio_threshold.setSuffix(" dBFS")
+
+        self.tx_audio_hang = QSpinBox()
+        self.tx_audio_hang.setRange(0, 5000)
+        self.tx_audio_hang.setSingleStep(50)
+        self.tx_audio_hang.setValue(450)
+        self.tx_audio_hang.setSuffix(" ms")
+
+        self.tx_audio_level_label = QLabel("TX-Pegel: —")
+        self.tx_audio_source_label = QLabel("Quelle: —")
+        self.tx_audio_status_label = QLabel("TX-Audiokern: aus")
+        self.tx_audio_status_label.setWordWrap(True)
+
+        refresh = QPushButton("Audiogeräte neu laden")
+        refresh.clicked.connect(self._refresh_tx_audio_devices)
+
+        f.addRow("", self.tx_audio_enabled)
+        f.addRow("TX-Audioquelle:", self.tx_audio_input)
+        f.addRow("Funk-TX Ausgang:", self.tx_audio_output)
+        f.addRow("PTT-Schwellwert:", self.tx_audio_threshold)
+        f.addRow("PTT-Nachlauf:", self.tx_audio_hang)
+        f.addRow("", refresh)
+        f.addRow("Pegel:", self.tx_audio_level_label)
+        f.addRow("Aktive Quelle:", self.tx_audio_source_label)
+        f.addRow("Status:", self.tx_audio_status_label)
+
+        note = QLabel(
+            "Der Kern ist absichtlich integrationsunabhängig: Alles, was PCM-Audio liefert, "
+            "kann dieselbe RTS/DTR-PTT auslösen. Der Audioeingang dient bereits zum Testen "
+            "mit Mikrofon/USB-Soundkarte; WASAPI-Prozessquellen wie TeamSpeak oder VLC "
+            "werden an denselben Kern angeschlossen."
+        )
+        note.setWordWrap(True)
+        f.addRow("", note)
+
+        v.addWidget(tx)
+
+        box = QGroupBox("Weitere Audiowege")
+        sf = QFormLayout(box)
+        sf.addRow("FRN:", QLabel("RX/TX über sounddevice / PortAudio aktiv"))
+        sf.addRow("Funk → TeamSpeak:", QLabel("Direkte TS3-Plugin-Brücke ab 0.2.9"))
         v.addWidget(box)
+
         v.addStretch(1)
+        self._refresh_tx_audio_devices()
         self._scroll_tab(page, "Audio")
 
     def _build_ptt(self):
@@ -537,11 +607,14 @@ class MainWindow(QMainWindow):
     def _mode_changed(self, *_args):
         self._current_mode = self.operating_mode.currentData() or "pc"
         if self._current_mode not in ("gateway", "radio_parrot"):
+            self._stop_tx_audio()
             self._stop_radio_rx_detector()
             self._stop_radio_audio_bridge()
             if self.ts_commander_auto.isChecked() and self.ts_commander_state:
                 self._set_ts_commander_state(False, "Betriebsart")
         elif self.gateway_started:
+            if self.tx_audio_enabled.isChecked():
+                self._start_tx_audio()
             if self.ts_commander_auto.isChecked():
                 self._start_radio_rx_detector()
             if self.ts_audio_bridge_enabled.isChecked():
@@ -606,6 +679,113 @@ class MainWindow(QMainWindow):
             self.theme_mode.currentText() if hasattr(self, "theme_mode") else "System",
             self.color_scheme.currentText() if hasattr(self, "color_scheme") else "Funk Blau",
         )
+
+    # ------------------------------------------------------- generic TX audio
+    def _refresh_tx_audio_devices(self):
+        if not hasattr(self, "tx_audio_input"):
+            return
+
+        current_in = self.tx_audio_input.currentData()
+        current_out = self.tx_audio_output.currentData()
+
+        self.tx_audio_input.clear()
+        for index, name in input_devices():
+            self.tx_audio_input.addItem(f"{index}: {name}", index)
+
+        self.tx_audio_output.clear()
+        self.tx_audio_output.addItem("Kein Audioausgang (nur PTT-Test)", None)
+        for index, name in output_devices():
+            self.tx_audio_output.addItem(f"{index}: {name}", index)
+
+        if current_in is not None:
+            idx = self.tx_audio_input.findData(current_in)
+            if idx >= 0:
+                self.tx_audio_input.setCurrentIndex(idx)
+
+        if current_out is not None:
+            idx = self.tx_audio_output.findData(current_out)
+            if idx >= 0:
+                self.tx_audio_output.setCurrentIndex(idx)
+
+    def _start_tx_audio(self):
+        if not hasattr(self, "tx_audio_enabled") or not self.tx_audio_enabled.isChecked():
+            return
+        if self._mode() not in ("gateway", "radio_parrot"):
+            return
+        if self.gateway_ptt is None:
+            self.tx_audio_status_label.setText("TX-Audiokern: kein PTT-Backend")
+            return
+
+        source_device = self.tx_audio_input.currentData()
+        if source_device is None:
+            self.tx_audio_status_label.setText("TX-Audiokern: keine Audioquelle")
+            return
+
+        try:
+            self.tx_audio_engine.start(
+                self.tx_audio_output.currentData(),
+                self.gateway_ptt,
+                self.tx_audio_threshold.value(),
+                self.tx_audio_hang.value(),
+            )
+            self.tx_audio_source.start(
+                source_device,
+                self.tx_audio_input.currentText() or "Audioeingang",
+            )
+            self.tx_audio_status_label.setText("TX-Audiokern: gestartet")
+        except Exception as exc:
+            self._stop_tx_audio()
+            self._tx_audio_error(str(exc))
+
+    def _stop_tx_audio(self):
+        try:
+            self.tx_audio_source.stop()
+        except Exception:
+            pass
+        try:
+            self.tx_audio_engine.stop()
+        except Exception:
+            pass
+        if hasattr(self, "tx_audio_status_label"):
+            self.tx_audio_status_label.setText("TX-Audiokern: aus")
+        if hasattr(self, "tx_audio_level_label"):
+            self.tx_audio_level_label.setText("TX-Pegel: —")
+        if hasattr(self, "tx_audio_source_label"):
+            self.tx_audio_source_label.setText("Quelle: —")
+
+    def _tx_audio_activity_changed(self, active):
+        if active:
+            self.gateway_ptt_status.setText("Gateway PTT: EIN (TX-Audio)")
+            self.status_ptt.setText("PTT: SENDEN · Audio")
+            self.tx_audio_status_label.setText("TX-Audiokern: SENDEN")
+        else:
+            if self.gateway_started:
+                self.gateway_ptt_status.setText("Gateway PTT: bereit")
+                self.status_ptt.setText("PTT: Gateway bereit")
+                self.tx_audio_status_label.setText("TX-Audiokern: bereit")
+        self._update_live_status()
+
+    def _tx_audio_level_changed(self, db):
+        if hasattr(self, "tx_audio_level_label"):
+            self.tx_audio_level_label.setText(f"TX-Pegel: {float(db):.1f} dBFS")
+
+    def _tx_audio_source_changed(self, name):
+        if hasattr(self, "tx_audio_source_label"):
+            self.tx_audio_source_label.setText("Quelle: " + str(name))
+
+    def _tx_audio_engine_state_changed(self, running):
+        if hasattr(self, "tx_audio_status_label") and running and not self.tx_audio_engine.active:
+            self.tx_audio_status_label.setText("TX-Audiokern: bereit")
+
+    def _tx_audio_source_state_changed(self, running):
+        if hasattr(self, "tx_audio_status_label") and not running and self.tx_audio_engine.running:
+            self.tx_audio_status_label.setText("TX-Audioquelle: gestoppt")
+
+    def _tx_audio_error(self, message):
+        if hasattr(self, "tx_audio_status_label"):
+            self.tx_audio_status_label.setText("TX-Audio Fehler: " + str(message))
+        if hasattr(self, "ui_log"):
+            self.ui_log.appendPlainText("TX-Audio: " + str(message))
 
     # ------------------------------------------------------------------ PTT
     def _build_hotkeys(self):
@@ -681,6 +861,7 @@ class MainWindow(QMainWindow):
             self.status_ptt.setText("PTT: Gateway bereit")
             self.start_main_btn.setEnabled(False)
             self.stop_main_btn.setEnabled(True)
+            self._start_tx_audio()
             self._start_radio_rx_detector()
             self._start_radio_audio_bridge()
             self._update_live_status()
@@ -691,6 +872,9 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Gateway PTT", str(exc))
 
     def _stop_gateway_ptt(self, silent=False):
+        # Stop audio sources first. They own the automatic PTT activity and
+        # must release it before the serial backend is closed.
+        self._stop_tx_audio()
         ptt = self.gateway_ptt
         self.gateway_ptt = None
         self.gateway_started = False
@@ -811,6 +995,10 @@ class MainWindow(QMainWindow):
             )
 
     def _emergency(self):
+        try:
+            self._stop_tx_audio()
+        except Exception:
+            pass
         try:
             self.frn_panel.ptt(False, force=True)
         except Exception:
@@ -1288,6 +1476,22 @@ class MainWindow(QMainWindow):
             if pos >= 0:
                 self.color_scheme.setCurrentIndex(pos)
             self.mode_colors.setChecked(bool(ui.get("mode_colors", True)))
+            audio_cfg = data.get("audio", {})
+            if hasattr(self, "tx_audio_enabled"):
+                self.tx_audio_enabled.setChecked(bool(audio_cfg.get("tx_enabled", False)))
+                tx_input = audio_cfg.get("tx_input")
+                if tx_input is not None:
+                    idx = self.tx_audio_input.findData(tx_input)
+                    if idx >= 0:
+                        self.tx_audio_input.setCurrentIndex(idx)
+                tx_output = audio_cfg.get("tx_output")
+                if tx_output is not None:
+                    idx = self.tx_audio_output.findData(tx_output)
+                    if idx >= 0:
+                        self.tx_audio_output.setCurrentIndex(idx)
+                self.tx_audio_threshold.setValue(float(audio_cfg.get("tx_threshold", -40.0)))
+                self.tx_audio_hang.setValue(int(audio_cfg.get("tx_hang_ms", 450)))
+
             ptt_cfg = data.get("ptt", {})
             idx = self.gateway_ptt_backend.findData(ptt_cfg.get("backend", "dry"))
             if idx >= 0:
@@ -1340,6 +1544,13 @@ class MainWindow(QMainWindow):
                 "theme": self.theme_mode.currentText(),
                 "scheme": self.color_scheme.currentText(),
                 "mode_colors": self.mode_colors.isChecked(),
+            },
+            "audio": {
+                "tx_enabled": self.tx_audio_enabled.isChecked(),
+                "tx_input": self.tx_audio_input.currentData(),
+                "tx_output": self.tx_audio_output.currentData(),
+                "tx_threshold": self.tx_audio_threshold.value(),
+                "tx_hang_ms": self.tx_audio_hang.value(),
             },
             "ptt": {
                 "backend": self.gateway_ptt_backend.currentData(),
