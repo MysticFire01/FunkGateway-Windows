@@ -511,3 +511,21 @@ loading opuslib/pymumble, the Windows Mumble backend searches the executable
 directory and PyInstaller's `_internal` directory, adds them to the DLL search
 path and explicitly preloads the bundled Opus library. This avoids runtime
 failures where opuslib cannot resolve the codec library by name.
+
+
+## Mumble PC PTT and certificates 0.2.31
+
+PC-user mode now supports direct push-to-talk through the native Mumble
+connection. Participant views are split into the current channel and the whole
+server. A mouth icon is drawn with the existing Qt/PySide6 runtime: green when
+idle, red when talking and blue for whisper audio. Local mute/deaf state is
+shown separately from server-side mute/deaf state.
+
+Mumble identities can now use portable client certificates stored below the
+FunkGateway configuration directory. FunkGateway can create a self-signed
+certificate, import PKCS#12/PFX, import PEM certificate/key pairs, display the
+SHA-256 fingerprint and request registration of the currently connected native
+Mumble user.
+
+No additional Qt or icon package is added. Only the cryptography dependency is
+new for certificate handling.
