@@ -87,6 +87,7 @@ class MumbleNativeGateway(QObject):
     radioRxLevel = Signal(float)
     networkRxLevel = Signal(float)
     networkPcm = Signal(bytes)  # 48kHz mono PCM for the VoIP parrot
+    chatReceived = Signal(object)
     error = Signal(str)
 
     def __init__(self, tx_engine=None, parent=None):
@@ -261,6 +262,13 @@ class MumbleNativeGateway(QObject):
                 pass
             mumble.set_receive_sound(True)
             mumble.callbacks.set_callback(cb_sound, self._sound_received)
+            try:
+                from pymumble_py3.constants import PYMUMBLE_CLBK_TEXTMESSAGERECEIVED
+            except ImportError:
+                from pymumble_py3.callbacks import PYMUMBLE_CLBK_TEXTMESSAGERECEIVED
+            mumble.callbacks.set_callback(
+                PYMUMBLE_CLBK_TEXTMESSAGERECEIVED, self._chat_received
+            )
             mumble.start()
             mumble.is_ready()
 
@@ -361,6 +369,52 @@ class MumbleNativeGateway(QObject):
             thread.join(timeout=2.0)
         self._connect_thread = None
         self._connected = False
+
+    def _chat_received(self, message):
+        try:
+            actor = int(message.actor) if message.HasField("actor") else None
+            self.chatReceived.emit({
+                "actor": actor,
+                "channels": [int(cid) for cid in message.channel_id],
+                "sessions": [int(sid) for sid in message.session],
+                "message": str(message.message or ""),
+            })
+        except Exception as exc:
+            self.error.emit("Mumble-Chat empfangen: " + str(exc))
+
+    def send_chat(self, message, session=None):
+        """Send escaped text to current channel, or a private user."""
+        if not self._connected or self._mumble is None:
+            raise RuntimeError("Bitte zuerst mit Mumble verbinden.")
+        from html import escape
+        message = str(message or "").strip()
+        if not message:
+            raise RuntimeError("Die Chat-Nachricht ist leer.")
+        if len(message) > 4000:
+            raise RuntimeError("Chat-Nachricht zu lang (maximal 4000 Zeichen).")
+        payload = escape(message)
+        if session is None:
+            channel = self._mumble.my_channel()
+            if channel is None:
+                raise RuntimeError("Kein aktueller Mumble-Channel vorhanden.")
+            channel.send_text_message(payload)
+            return {"target": "Channel", "message": message}
+        try:
+            user = self._mumble.users[int(session)]
+        except (KeyError, ValueError, TypeError) as exc:
+            raise RuntimeError("Der private Empfänger ist nicht mehr verbunden.") from exc
+        name = str(self._prop(user, "name", session))
+        user.send_text_message(payload)
+        return {"target": name, "message": message}
+
+    def chat_sender_name(self, actor):
+        if actor is None:
+            return "Server"
+        try:
+            user = self._mumble.users[int(actor)]
+            return str(self._prop(user, "name", "Unbekannt"))
+        except Exception:
+            return f"Session {actor}"
 
     def set_receive_to_radio(self, enabled):
         self._receive_to_radio = bool(enabled)
