@@ -552,3 +552,12 @@ The native Mumble participant list now distinguishes the local FunkGateway user
 from other participants. The mouth icon is orange while the local user is
 talking, matching the FRN visual language. Other speakers remain red, whisper
 remains blue, and idle participants remain green.
+
+
+## Native Mumble PC playback 0.2.34
+
+PC-user mode now treats the selected native Mumble input as a microphone and
+provides a separate local output-device selector for speakers/headphones.
+Received Mumble PCM can be played directly through the selected Windows audio
+device using the already bundled sounddevice backend. Local playback and the
+Mumble-to-radio TX path remain independent, so no virtual audio cable is needed.
