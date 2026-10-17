@@ -353,3 +353,12 @@ or older, FunkGateway offers a Yes/No install/update prompt. Choosing Yes opens
 the bundled .ts3_plugin package using TeamSpeak's normal plugin installer.
 A manual install/update button is also available on the TeamSpeak integration
 page.
+
+
+## Safe TeamSpeak shutdown before plugin update 0.2.16
+
+Before launching the bundled TS3 plugin installer, FunkGateway checks whether
+TeamSpeak 3 is running. It asks for permission to close TeamSpeak, first tries a
+normal window close and waits for the process to exit. Only if that fails does
+it offer a separate forced-close confirmation. The installer is not launched
+while TeamSpeak remains active.
