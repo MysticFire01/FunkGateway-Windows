@@ -18,7 +18,8 @@ TYPE_START = 2
 TYPE_STOP = 3
 TYPE_PING = 4
 TYPE_VERSION = 5
-PLUGIN_VERSION = "0.1.1"
+TYPE_RESET = 6
+PLUGIN_VERSION = "0.1.2"
 TARGET_RATE = 48000
 FRAME_SAMPLES = 960  # 20 ms @ 48 kHz
 
@@ -95,6 +96,17 @@ class TeamSpeakPluginAudioBridge:
         finally:
             sock.close()
 
+    def reset_plugin(self):
+        """Reset stale injected audio / talk-state requests in the TS3 plugin."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.sendto(self._packet(TYPE_RESET), ("127.0.0.1", PORT))
+            return True
+        except Exception:
+            return False
+        finally:
+            sock.close()
+
     def start(self, input_device):
         self.stop()
         if sd is None:
@@ -130,6 +142,7 @@ class TeamSpeakPluginAudioBridge:
     def _run(self):
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
+            self._send(TYPE_RESET)
             info = sd.query_devices(self._device, "input")
             input_rate = int(round(float(info.get("default_samplerate") or TARGET_RATE)))
             if input_rate < 8000:
