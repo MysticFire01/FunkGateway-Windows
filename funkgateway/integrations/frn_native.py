@@ -451,6 +451,8 @@ class FrnNativeClient:
         self.play_queue = queue.Queue(maxsize=12)
         self.play_thread = None
         self.output_stream = None
+        self.output_rate = FRN_SAMPLE_RATE
+        self.rx_rate_state = None
         self.input_stream = None
         self.input_proc = None
 
@@ -549,9 +551,27 @@ class FrnNativeClient:
                 "Python-Modul sounddevice fehlt. Die FunkGateway-venv sollte es enthalten."
             )
         self.codec = GsmWav49()
+        # As with microphones, many Windows output drivers behave poorly
+        # when forced to 8 kHz even if PortAudio accepts the format. Open the
+        # selected speaker at its native/default rate and resample FRN's fixed
+        # 8 kHz PCM before playback.
+        self.output_rate = FRN_SAMPLE_RATE
+        try:
+            info = sd.query_devices(self.cfg.audio_output, "output")
+            default_rate = int(round(float(info.get("default_samplerate") or 0)))
+            if default_rate >= FRN_SAMPLE_RATE:
+                self.output_rate = default_rate
+        except Exception:
+            pass
+
+        output_block = max(
+            FRN_AUDIO_SAMPLES,
+            int(round(FRN_AUDIO_SAMPLES * self.output_rate / FRN_SAMPLE_RATE)),
+        )
+        self.rx_rate_state = None
         self.output_stream = sd.RawOutputStream(
-            samplerate=FRN_SAMPLE_RATE,
-            blocksize=FRN_AUDIO_SAMPLES,
+            samplerate=self.output_rate,
+            blocksize=output_block,
             channels=1,
             dtype="int16",
             device=self.cfg.audio_output,
@@ -562,8 +582,8 @@ class FrnNativeClient:
         self.play_thread = threading.Thread(target=self._play_loop, daemon=True)
         self.play_thread.start()
         self.signals.log.emit(
-            "Audio aktiv: GSM 06.10 WAV49, 8 kHz mono. "
-            "FRN-RX wird auf den gewählten Ausgang ausgegeben."
+            f"Audio aktiv: GSM 06.10 WAV49. FRN-RX 8000 Hz -> "
+            f"Lautsprecher {self.output_rate} Hz."
         )
 
     def _close_audio(self):
@@ -579,6 +599,7 @@ class FrnNativeClient:
                 except Exception:
                     pass
                 setattr(self, stream_name, None)
+        self.rx_rate_state = None
         if self.codec:
             try:
                 self.codec.close()
@@ -596,7 +617,18 @@ class FrnNativeClient:
                 if self.codec and self.output_stream:
                     pcm = self.codec.decode_packet(encoded)
                     self.signals.rx_audio_level.emit(rms_dbfs(pcm))
-                    self.output_stream.write(pcm)
+                    if self.output_rate == FRN_SAMPLE_RATE:
+                        playback = pcm
+                    else:
+                        playback, self.rx_rate_state = audioop.ratecv(
+                            pcm,
+                            2,
+                            1,
+                            FRN_SAMPLE_RATE,
+                            self.output_rate,
+                            self.rx_rate_state,
+                        )
+                    self.output_stream.write(playback)
             except Exception as exc:
                 self.signals.error.emit("FRN RX-Audio: " + str(exc))
 
