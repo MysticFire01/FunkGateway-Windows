@@ -2440,8 +2440,10 @@ class MainWindow(QMainWindow):
             self.status_mumble.setText("Mumble: verbunden")
             self._update_live_status()
             QTimer.singleShot(600, self._refresh_mumble_native_channels)
-            self._ensure_mumble_radio_tx_engine()
+            if self._mode() == "gateway":
+                self._ensure_mumble_radio_tx_engine()
         else:
+            self._parrot_reset()
             if hasattr(self, "mumble_native_status_label"):
                 self.mumble_native_status_label.setText("Native Mumble: getrennt")
             self._clear_mumble_runtime_views()
@@ -3347,12 +3349,15 @@ class MainWindow(QMainWindow):
             if self.ts_commander_auto.isChecked() and self.ts_commander_state:
                 self._set_ts_commander_state(False, "Betriebsart")
         elif self.gateway_started:
-            if self.tx_audio_enabled.isChecked() and self._mode() != "radio_parrot":
-                if self._mode() != "radio_parrot":
+            if self.tx_audio_enabled.isChecked() and self._mode() == "gateway":
                 self._start_tx_audio()
             self._start_radio_rx_detector()
-            if self.ts_audio_bridge_enabled.isChecked():
+            if self.ts_audio_bridge_enabled.isChecked() and self._mode() == "gateway":
                 self._start_radio_audio_bridge()
+        if self._current_mode in ("radio_parrot", "voip_parrot"):
+            self._stop_radio_audio_bridge()
+            self.mumble_native.set_radio_to_mumble(False)
+            self.mumble_native.set_receive_to_radio(False)
         self._apply_mode()
         self._update_live_status()
 
@@ -4669,7 +4674,7 @@ class MainWindow(QMainWindow):
     def _start_radio_audio_bridge(self):
         if not self.ts_audio_bridge_enabled.isChecked():
             return
-        if self._mode() not in ("gateway", "radio_parrot"):
+        if self._mode() != "gateway":
             return
         inp = self.ts_rx_input.currentData()
         if inp is None:
