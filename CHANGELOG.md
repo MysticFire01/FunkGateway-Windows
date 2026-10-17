@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.51 – Mumble-Rechtsklickaktionen und Publist-Abgleich
+
+- Benutzeraktionen jetzt sowohl im Channelbaum als auch im Teilnehmer-Tab per Rechtsklick
+- eigener Benutzer:
+  - Self-Mute ein/aus
+  - Self-Deaf ein/aus
+- andere Benutzer:
+  - lokal stummschalten / lokale Stummschaltung aufheben
+  - serverseitig stummschalten / aufheben
+  - serverseitig taub schalten / aufheben
+- serverseitige Aktionen funktionieren nur mit den nötigen Mumble-Rechten
+- lokale Stummschaltung unterdrückt Audio dieses Benutzers nur in FunkGateway
+- Kontextmenüs verwenden dieselbe Teilnehmerdatenbasis in beiden Ansichten
+- Teilnehmerstatus zeigt lokale Benutzer-Stummschaltung getrennt von Self-Mute/Self-Deaf
+- offizieller Publist-Abruf auf Mumble 1.5.939 aktualisiert
+- QtNetwork-Anfrage ist jetzt näher am offiziellen Mumble-WebFetch und setzt keine unnötigen Connection-/Encoding-Header
+
 ## 0.2.50 – Self-Mute / Self-Deaf für FRN und Mumble
 
 - Mumble Teilnehmerbereich erhält klickbare Self-Mute- und Self-Deaf-Schalter
