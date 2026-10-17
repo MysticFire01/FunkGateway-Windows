@@ -860,8 +860,16 @@ class MainWindow(QMainWindow):
         self.mumble_ptt_hotkey_status.setWordWrap(True)
         self.mumble_rx_input = QComboBox()
         self.mumble_rx_input.setMinimumWidth(300)
-        self.mumble_rx_refresh_btn = QPushButton("Funk-RX Audiogeräte neu laden")
+        self.mumble_input_label = QLabel("Funk-RX Eingang:")
+        self.mumble_rx_refresh_btn = QPushButton("Audiogeräte neu laden")
         self.mumble_rx_refresh_btn.clicked.connect(self._refresh_mumble_rx_inputs)
+
+        self.mumble_local_playback = QCheckBox("Mumble-Audio lokal wiedergeben")
+        self.mumble_output = QComboBox()
+        self.mumble_output.setMinimumWidth(300)
+        self.mumble_output_label = QLabel("Audio-Ausgabe / Lautsprecher:")
+        self.mumble_local_playback.toggled.connect(self._mumble_playback_changed)
+        self.mumble_output.currentIndexChanged.connect(self._mumble_playback_changed)
         self.mumble_rx_threshold = QDoubleSpinBox()
         self.mumble_rx_threshold.setRange(-80.0, -3.0)
         self.mumble_rx_threshold.setDecimals(1)
@@ -900,7 +908,9 @@ class MainWindow(QMainWindow):
         af.addRow("Mumble PTT-Hotkey:", self.mumble_ptt_hotkey)
         af.addRow("Hotkey-Bereich:", self.mumble_ptt_hotkey_scope)
         af.addRow("", self.mumble_ptt_hotkey_status)
-        af.addRow("Funk-RX Eingang:", self.mumble_rx_input)
+        af.addRow(self.mumble_input_label, self.mumble_rx_input)
+        af.addRow(self.mumble_output_label, self.mumble_output)
+        af.addRow("", self.mumble_local_playback)
         af.addRow("", self.mumble_rx_refresh_btn)
         af.addRow("RX-Schwellwert:", self.mumble_rx_threshold)
         af.addRow("RX-Nachlauf:", self.mumble_rx_hang)
@@ -1023,14 +1033,26 @@ class MainWindow(QMainWindow):
     def _refresh_mumble_rx_inputs(self):
         if not hasattr(self, "mumble_rx_input"):
             return
-        current = self.mumble_rx_input.currentData()
+        current_in = self.mumble_rx_input.currentData()
+        current_out = self.mumble_output.currentData() if hasattr(self, "mumble_output") else None
+
         self.mumble_rx_input.clear()
         for index, name in input_devices():
             self.mumble_rx_input.addItem(f"{index}: {name}", index)
-        if current is not None:
-            idx = self.mumble_rx_input.findData(current)
+
+        if hasattr(self, "mumble_output"):
+            self.mumble_output.clear()
+            for index, name in output_devices():
+                self.mumble_output.addItem(f"{index}: {name}", index)
+
+        if current_in is not None:
+            idx = self.mumble_rx_input.findData(current_in)
             if idx >= 0:
                 self.mumble_rx_input.setCurrentIndex(idx)
+        if current_out is not None and hasattr(self, "mumble_output"):
+            idx = self.mumble_output.findData(current_out)
+            if idx >= 0:
+                self.mumble_output.setCurrentIndex(idx)
 
     def _connect_mumble_native(self):
         if not self.mumble_native_enabled.isChecked():
@@ -1067,6 +1089,8 @@ class MainWindow(QMainWindow):
                 pc_ptt_enabled=(
                     self._mode() == "pc" and self.mumble_pc_ptt_enabled.isChecked()
                 ),
+                playback_enabled=self.mumble_local_playback.isChecked(),
+                playback_device=self.mumble_output.currentData(),
             )
             self._ensure_mumble_radio_tx_engine()
         except Exception as exc:
@@ -1703,6 +1727,14 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._mumble_native_error("Mumble → Funk: " + str(exc))
 
+    def _mumble_playback_changed(self, *_args):
+        if not hasattr(self, "mumble_local_playback"):
+            return
+        self.mumble_native.configure_playback(
+            self.mumble_local_playback.isChecked(),
+            self.mumble_output.currentData(),
+        )
+
     def _mumble_net_to_radio_changed(self, enabled):
         self.mumble_native.set_receive_to_radio(bool(enabled))
         if enabled:
@@ -1997,6 +2029,15 @@ class MainWindow(QMainWindow):
             "}"
         )
         self._update_frn_ptt_button_style()
+        if hasattr(self, "mumble_input_label"):
+            self.mumble_input_label.setText(
+                "Mikrofon-Eingang:" if mode == "pc" else "Funk-RX Eingang:"
+            )
+        if hasattr(self, "mumble_output_label"):
+            self.mumble_output_label.setText(
+                "Lautsprecher / Kopfhörer:" if mode == "pc"
+                else "Lokale Mumble-Ausgabe:"
+            )
         if hasattr(self, "mumble_pc_ptt_btn"):
             self.mumble_pc_ptt_btn.setEnabled(
                 mode == "pc" and self.mumble_native.connected
@@ -3480,6 +3521,13 @@ class MainWindow(QMainWindow):
                         idx = self.mumble_rx_input.findData(wanted_rx)
                         if idx >= 0:
                             self.mumble_rx_input.setCurrentIndex(idx)
+                    if hasattr(self, "mumble_local_playback"):
+                        self.mumble_local_playback.setChecked(bool(mumble_cfg.get("playback_enabled", False)))
+                    wanted_out = mumble_cfg.get("output_device")
+                    if wanted_out is not None and hasattr(self, "mumble_output"):
+                        idx = self.mumble_output.findData(wanted_out)
+                        if idx >= 0:
+                            self.mumble_output.setCurrentIndex(idx)
 
             ptt_cfg = data.get("ptt", {})
             idx = self.gateway_ptt_backend.findData(ptt_cfg.get("backend", "dry"))
@@ -3575,6 +3623,8 @@ class MainWindow(QMainWindow):
                 "radio_to_net": self.mumble_radio_to_net.isChecked() if hasattr(self, "mumble_radio_to_net") else False,
                 "net_to_radio": self.mumble_net_to_radio.isChecked() if hasattr(self, "mumble_net_to_radio") else False,
                 "rx_input": self.mumble_rx_input.currentData() if hasattr(self, "mumble_rx_input") else None,
+                "playback_enabled": self.mumble_local_playback.isChecked() if hasattr(self, "mumble_local_playback") else False,
+                "output_device": self.mumble_output.currentData() if hasattr(self, "mumble_output") else None,
                 "rx_threshold": self.mumble_rx_threshold.value() if hasattr(self, "mumble_rx_threshold") else -35.0,
                 "rx_hang_ms": self.mumble_rx_hang.value() if hasattr(self, "mumble_rx_hang") else 700,
                 "pc_ptt_enabled": self.mumble_pc_ptt_enabled.isChecked() if hasattr(self, "mumble_pc_ptt_enabled") else False,
