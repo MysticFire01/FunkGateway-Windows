@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.18 Portable Preview
+
+- Standard-FRN-Clientversion auf `VX=2014003` korrigiert
+- `<SV>2014004</SV>` wird nicht mehr mit der Client-Protokollversion verwechselt
+- PC-User bleibt normal `CL=2`
+- verbessert Kompatibilität mit Servern, die gültige FRN-Clientversionen filtern
+- Hilfetext im Verbindungsdialog entsprechend präzisiert
+- Onedir/Standalone, Updater, Audio-Cleanup und Raumwechsel-Fix bleiben erhalten
+
 ## 0.1.17 Portable Preview
 
 - FRN-Audio startet erst nach erfolgreicher Login-Stufe 2
