@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.22 Portable Preview
+
+- PC only (`CL=2`): leeres Stadtfeld sendet weiterhin exakt `CT=- -`
+- bei eingetragener Stadt wird nur der Stadtname gesendet
+- kein automatisches ` - -` mehr hinter einer vorhandenen Stadt
+- verhindert Anzeigen wie `Würzburg - -` in der Teilnehmerliste
+- alle bisherigen FRN-, Audio-, Raumwechsel-, Updater- und Onedir-Fixes bleiben erhalten
+
 ## 0.1.21 Portable Preview
 
 - korrigiert den leeren PC-Stadtwert auf exakt `CT=- -`
