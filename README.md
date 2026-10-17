@@ -711,3 +711,21 @@ Per-user local mute now filters the actual incoming PCM stream. A locally muted
 participant remains visible and may still show a speaking mouth icon, but their
 audio is no longer played locally and is not forwarded into the Mumble-to-radio
 TX path.
+
+
+## Gateway safety and DTMF 0.2.54
+
+Gateway mode now has a generic PTT safety layer independent of FRN, Mumble or
+TeamSpeak. It provides a maximum transmit time, minimum off-time and a
+post-transmit return guard. The return guard suppresses radio RX briefly after
+PTT release and requires a configurable period of stable RX audio, preventing
+relay/audio switching pops from immediately retriggering the gateway.
+
+A dependency-free DTMF decoder is also available for radio-side remote control.
+It is disabled by default and requires a 4–8 digit PIN. Commands can start or
+stop the gateway or trigger the emergency PTT release. The DTMF listener may
+remain active after a remote stop so the gateway can subsequently be restarted.
+
+The Mumble public-list loader additionally tries QtNetwork, Windows curl with
+HTTP/1.1, and certifi-backed urllib before using the known smaller fallback
+list.
