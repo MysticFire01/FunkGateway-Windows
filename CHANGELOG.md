@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.8 – Funk-Audio nach TeamSpeak + PC-PTT Commander
+
+- echte Funk-RX-Audiobrücke über PortAudio/sounddevice
+- wählbarer Funk-RX Eingang und TeamSpeak/virtueller Audio-Ausgang
+- unterschiedliche Ein-/Ausgangs-Sampleraten werden automatisch resampelt
+- gedacht für VB-CABLE/VoiceMeeter oder vergleichbare virtuelle Audiokabel unter Windows
+- Audio-Brücke startet/stopp mit dem Gateway
+- PC-User-Modus: Channel Commander folgt automatisch dem echten eigenen TeamSpeak-Sprech/PTT-Status
+- eigener TS spricht → Commander EIN
+- eigener TS hört auf → Commander AUS
+- Commander-Automatik basiert auf ClientQuery self_talking und ist unabhängig vom FunkGateway-Hotkey
+
 ## 0.2.7 – TeamSpeak Channel Commander folgt Funk-RX
 
 - plattformübergreifender Funk-RX-Audioaktivitätsdetektor
