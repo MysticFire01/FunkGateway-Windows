@@ -6,4 +6,4 @@ certifi>=2024.8.30
 
 opuslib==3.0.1
 protobuf==3.20.3
-cryptography>=43,<46
+cryptography==43.0.3
