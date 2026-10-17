@@ -116,44 +116,86 @@ def download_and_prepare(release, asset):
     return root, extract_dir
 
 
+def _ps_literal(value: str) -> str:
+    """Return a PowerShell single-quoted literal without backslash escaping."""
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def launch_portable_update(extract_dir: Path, app_dir: Path, exe_name="FunkGateway-Windows.exe"):
-    """Launch a detached PowerShell helper that waits for us, copies and restarts."""
+    """Launch a detached PowerShell helper that waits, updates and restarts."""
     extract_dir = Path(extract_dir).resolve()
     app_dir = Path(app_dir).resolve()
     helper_dir = extract_dir.parent
     script = helper_dir / "apply-update.ps1"
     pid = os.getpid()
 
+    source_ps = _ps_literal(str(extract_dir))
+    target_ps = _ps_literal(str(app_dir))
+    exe_ps = _ps_literal(exe_name)
+
     ps = f"""$ErrorActionPreference = 'Stop'
 $pidToWait = {pid}
-$source = {json.dumps(str(extract_dir))}
-$target = {json.dumps(str(app_dir))}
-$exe = {json.dumps(exe_name)}
+$source = {source_ps}
+$target = {target_ps}
+$exe = {exe_ps}
+$logDir = Join-Path $target 'logs'
+$log = Join-Path $logDir 'update.log'
+
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+("[" + (Get-Date -Format s) + "] Update helper started. PID=" + $pidToWait) | Add-Content -LiteralPath $log
+("[" + (Get-Date -Format s) + "] Source=" + $source) | Add-Content -LiteralPath $log
+("[" + (Get-Date -Format s) + "] Target=" + $target) | Add-Content -LiteralPath $log
 
 try {{
     Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 750
+    ("[" + (Get-Date -Format s) + "] FunkGateway process stopped.") | Add-Content -LiteralPath $log
 
-    Get-ChildItem -LiteralPath $source -Force | ForEach-Object {{
-        if ($_.Name -notin @('config','logs')) {{
-            $dest = Join-Path $target $_.Name
-            if ($_.PSIsContainer) {{
-                Copy-Item -LiteralPath $_.FullName -Destination $dest -Recurse -Force
-            }} else {{
-                Copy-Item -LiteralPath $_.FullName -Destination $dest -Force
+    $items = Get-ChildItem -LiteralPath $source -Force | Where-Object {{
+        $_.Name -notin @('config','logs')
+    }}
+
+    foreach ($item in $items) {{
+        $dest = Join-Path $target $item.Name
+        $copied = $false
+        for ($try = 1; $try -le 10 -and -not $copied; $try++) {{
+            try {{
+                if ($item.PSIsContainer) {{
+                    Copy-Item -LiteralPath $item.FullName -Destination $dest -Recurse -Force
+                }} else {{
+                    Copy-Item -LiteralPath $item.FullName -Destination $dest -Force
+                }}
+                $copied = $true
+                ("[" + (Get-Date -Format s) + "] Copied " + $item.Name) | Add-Content -LiteralPath $log
+            }} catch {{
+                if ($try -eq 10) {{ throw }}
+                Start-Sleep -Milliseconds 500
             }}
         }}
     }}
 
-    Start-Process -FilePath (Join-Path $target $exe) -WorkingDirectory $target
+    $newExe = Join-Path $target $exe
+    if (-not (Test-Path -LiteralPath $newExe)) {{
+        throw ("Aktualisierte EXE wurde nicht gefunden: " + $newExe)
+    }}
+
+    Start-Sleep -Milliseconds 500
+    ("[" + (Get-Date -Format s) + "] Starting " + $newExe) | Add-Content -LiteralPath $log
+    Start-Process -FilePath $newExe -WorkingDirectory $target
+    ("[" + (Get-Date -Format s) + "] Update completed and restart requested.") | Add-Content -LiteralPath $log
 }} catch {{
     $msg = $_.Exception.Message
-    Add-Type -AssemblyName PresentationFramework
-    [System.Windows.MessageBox]::Show(
-        "FunkGateway-Update fehlgeschlagen:\n$msg",
-        "FunkGateway Windows Update",
-        'OK',
-        'Error'
-    ) | Out-Null
+    ("[" + (Get-Date -Format s) + "] ERROR: " + $msg) | Add-Content -LiteralPath $log
+    try {{
+        Add-Type -AssemblyName PresentationFramework
+        $nl = [Environment]::NewLine
+        [System.Windows.MessageBox]::Show(
+            "FunkGateway-Update fehlgeschlagen:" + $nl + $nl + $msg + $nl + $nl + "Details: " + $log,
+            "FunkGateway Windows Update",
+            'OK',
+            'Error'
+        ) | Out-Null
+    }} catch {{}}
 }}
 """
     script.write_text(ps, encoding="utf-8-sig")
