@@ -577,3 +577,10 @@ For certificate support the Windows build now resolves the exact installed
 `cryptography.hazmat.bindings._rust` extension path and injects that single
 native module into the correct PyInstaller package directory. A post-build
 check fails the workflow if the Rust binding is missing.
+
+
+## Dark tree/list styling 0.2.36
+
+Tree widgets now use the same dark background, alternating-row background and
+selection colors as FunkGateway tables. This removes bright white alternating
+rows from the Mumble public-server list and channel tree.
