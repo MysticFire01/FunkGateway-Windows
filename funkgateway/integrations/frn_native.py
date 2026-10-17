@@ -440,6 +440,7 @@ class FrnNativeClient:
         self.thread = None
         self.buf = bytearray()
         self._pending_crlf_lf = False
+        self._extension_11_value = None
         self.state = "DISCONNECTED"
 
         self.list_kind = None
@@ -892,6 +893,18 @@ class FrnNativeClient:
         self.list_items = []
         self._set_state("IDLE")
 
+    def _consume_extension_11(self):
+        """Undocumented Eurogate datatype 11, observed with text payload 1 CRLF."""
+        idx = self._line_end()
+        if idx is None:
+            if len(self.buf) > MAX_LINE:
+                raise RuntimeError("FRN-Erweiterung 11: Zeile zu lang.")
+            return False
+        value = self._pop_line(idx)
+        self._extension_11_value = value
+        self.signals.log.emit(f"FRN: Datentyp 11 (Eurogate): {value!r}")
+        self._set_state("IDLE")
+        return True
     def _consume_list(self):
         progressed = False
         while True:
@@ -977,6 +990,11 @@ class FrnNativeClient:
                 self._set_state("RX_CLIENT_LIST")
                 continue
 
+            if self.state == "RX_EXTENSION_11":
+                if not self._consume_extension_11():
+                    return
+                continue
+
             if self.state in ("RX_CLIENT_LIST", "RX_LIST"):
                 if not self._consume_list():
                     return
@@ -1018,6 +1036,8 @@ class FrnNativeClient:
                 self._set_state("RX_AUDIO")
             elif cmd == 3:  # DT_CLIENT_LIST
                 self._set_state("RX_CLIENT_LIST_HEADER")
+            elif cmd == 11:
+                self._set_state("RX_EXTENSION_11")
             elif 4 <= cmd <= 10:
                 names = {
                     4: "TEXT_MESSAGE", 5: "NET_NAMES", 6: "ADMIN_LIST",
