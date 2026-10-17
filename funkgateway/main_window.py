@@ -3261,6 +3261,138 @@ class MainWindow(QMainWindow):
             self.gateway_ptt_port.setCurrentIndex(idx)
         self.gateway_ptt_port.blockSignals(False)
 
+    def _apply_gateway_return_guard(self):
+        if not hasattr(self, "gateway_safety_enabled"):
+            return
+        if not self.gateway_safety_enabled.isChecked():
+            return
+        guard_ms = int(self.gateway_return_guard.value())
+        if guard_ms <= 0:
+            return
+        try:
+            self.radio_rx_detector.inhibit(guard_ms)
+        except Exception:
+            pass
+        try:
+            self.radio_audio_bridge.inhibit(guard_ms)
+        except Exception:
+            pass
+        try:
+            self.mumble_native.inhibit_radio_rx(guard_ms)
+        except Exception:
+            pass
+        if hasattr(self, "gateway_safety_status"):
+            self.gateway_safety_status.setText(
+                f"Rücklaufschutz aktiv · RX {guard_ms} ms gesperrt"
+            )
+
+    def _gateway_safety_event(self, kind, detail):
+        kind = str(kind or "")
+        if kind == "tot":
+            try:
+                self.tx_audio_engine.force_release()
+            except Exception:
+                pass
+            self.gateway_safety_status.setText(
+                f"SICHERHEIT: TX nach {self.gateway_tot.value()} s abgeschaltet"
+            )
+            self.gateway_safety_status.setStyleSheet(
+                "color:#E53935;font-weight:bold;"
+            )
+            self.gateway_ptt_status.setText("Gateway PTT: TOT ausgelöst")
+            self.status_ptt.setText("PTT: Sicherheitsabschaltung")
+            self._apply_gateway_return_guard()
+            if hasattr(self, "ui_log"):
+                self.ui_log.appendPlainText(
+                    f"Gateway-Schutz: TOT nach {self.gateway_tot.value()} s ausgelöst."
+                )
+            return
+
+        if kind == "tx_off":
+            self._apply_gateway_return_guard()
+            if hasattr(self, "gateway_safety_status"):
+                self.gateway_safety_status.setStyleSheet("")
+            return
+
+        if kind == "lockout":
+            self.gateway_safety_status.setText(
+                "PTT blockiert · Mindestpause läuft"
+                + (f" ({detail})" if detail else "")
+            )
+            return
+
+        if kind == "tx_on":
+            self.gateway_safety_status.setText("Schutz aktiv · TX überwacht")
+            self.gateway_safety_status.setStyleSheet("")
+
+    def _configure_dtmf(self, *_args):
+        if not hasattr(self, "dtmf_enabled"):
+            return
+        pin = self.dtmf_pin.text().strip()
+        valid_pin = pin.isdigit() and 4 <= len(pin) <= 8
+        enabled = self.dtmf_enabled.isChecked() and valid_pin
+        self.dtmf_decoder.configure(enabled=enabled)
+        if not self.dtmf_enabled.isChecked():
+            self.dtmf_status.setText("DTMF: aus")
+        elif not valid_pin:
+            self.dtmf_status.setText("DTMF: bitte 4–8 Ziffern als PIN eingeben")
+        else:
+            self.dtmf_status.setText("DTMF: bereit · Befehle mit PIN geschützt")
+
+    def _dtmf_digit_received(self, digit):
+        if hasattr(self, "dtmf_last_digit"):
+            self.dtmf_last_digit.setText("Letzte Taste: " + str(digit))
+
+    def _dtmf_status_changed(self, text):
+        if hasattr(self, "dtmf_status"):
+            self.dtmf_status.setText(str(text))
+
+    def _dtmf_command_received(self, sequence):
+        if not self.dtmf_decoder.enabled:
+            return
+        now = time.monotonic()
+        if now - self._last_dtmf_command_at < 1.0:
+            return
+        self._last_dtmf_command_at = now
+
+        seq = str(sequence or "").strip()
+        if not (seq.startswith("*") and seq.endswith("#")):
+            return
+        body = seq[1:-1]
+        parts = body.split("*")
+        if len(parts) != 2:
+            self.dtmf_status.setText("DTMF: ungültiges Befehlsformat")
+            return
+        pin, command = parts
+        if pin != self.dtmf_pin.text().strip():
+            self.dtmf_status.setText("DTMF: falsche PIN")
+            if hasattr(self, "ui_log"):
+                self.ui_log.appendPlainText("DTMF: Befehl mit falscher PIN verworfen.")
+            return
+
+        if command == "0":
+            self.dtmf_status.setText("DTMF: Gateway stoppen")
+            self._stop_gateway_ptt()
+        elif command == "1":
+            if self._mode() not in ("gateway", "radio_parrot"):
+                self.dtmf_status.setText(
+                    "DTMF: Start nur im Funk-Gateway/Funk-Papagei-Modus"
+                )
+                return
+            self.dtmf_status.setText("DTMF: Gateway starten")
+            self._start_gateway_ptt()
+        elif command == "9":
+            self.dtmf_status.setText("DTMF: NOT-AUS / PTT AUS")
+            self._emergency()
+        else:
+            self.dtmf_status.setText("DTMF: unbekannter Befehl")
+            return
+
+        if hasattr(self, "ui_log"):
+            self.ui_log.appendPlainText(
+                "DTMF: autorisierter Gateway-Befehl ausgeführt: " + command
+            )
+
     def _make_gateway_ptt(self):
         backend = self.gateway_ptt_backend.currentData()
         if backend == "dry":
