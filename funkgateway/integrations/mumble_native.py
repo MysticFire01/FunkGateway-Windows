@@ -106,6 +106,8 @@ class MumbleNativeGateway(QObject):
         self._pc_ptt_enabled = False
         self._pc_ptt_active = False
         self._own_tx_active = False
+        self._self_mute_local = False
+        self._self_deaf_local = False
         self._certfile = ""
         self._keyfile = ""
 
@@ -304,6 +306,33 @@ class MumbleNativeGateway(QObject):
         else:
             self._stop_capture()
 
+    def set_self_mute(self, enabled):
+        if not self._connected or self._mumble is None:
+            raise RuntimeError("Native Mumble-Verbindung ist nicht aktiv.")
+        enabled = bool(enabled)
+        self._self_mute_local = enabled
+        if enabled:
+            self._pc_ptt_active = False
+            self._own_tx_active = False
+        myself = self._mumble.users.myself
+        if enabled:
+            myself.mute()
+        else:
+            myself.unmute()
+        return True
+
+    def set_self_deaf(self, enabled):
+        if not self._connected or self._mumble is None:
+            raise RuntimeError("Native Mumble-Verbindung ist nicht aktiv.")
+        enabled = bool(enabled)
+        self._self_deaf_local = enabled
+        myself = self._mumble.users.myself
+        if enabled:
+            myself.deafen()
+        else:
+            myself.undeafen()
+        return True
+
     def configure_pc_ptt(self, enabled, input_device=None):
         self._pc_ptt_enabled = bool(enabled)
         if input_device is not None:
@@ -314,7 +343,7 @@ class MumbleNativeGateway(QObject):
             self._stop_capture()
 
     def set_pc_ptt(self, active):
-        active = bool(active) and self._pc_ptt_enabled and self._connected
+        active = bool(active) and self._pc_ptt_enabled and self._connected and not self._self_mute_local
         self._pc_ptt_active = active
         if self._pc_ptt_enabled:
             self._own_tx_active = active
@@ -547,7 +576,7 @@ class MumbleNativeGateway(QObject):
             if not pcm:
                 return
             self.networkRxLevel.emit(self._dbfs(pcm))
-            if self._playback_enabled:
+            if self._playback_enabled and not self._self_deaf_local:
                 self._queue_playback(pcm)
             if self._receive_to_radio and self.tx_engine is not None:
                 self.tx_engine.push_pcm(pcm, 48000, 1, "Mumble: " + name)
@@ -612,6 +641,9 @@ class MumbleNativeGateway(QObject):
                 and int(self._prop(user, "session", _session)) == myself_session
             )
             own_talking = bool(is_self and self._own_tx_active)
+            if is_self:
+                self._self_mute_local = local_mute
+                self._self_deaf_local = local_deaf
             result.append({
                 "name": name,
                 "channel": channel_path,
@@ -721,7 +753,7 @@ class MumbleNativeGateway(QObject):
                         preroll_samples -= len(old) // 2
 
                     send_blocks = []
-                    pc_send = self._pc_ptt_enabled and self._pc_ptt_active
+                    pc_send = self._pc_ptt_enabled and self._pc_ptt_active and not self._self_mute_local
                     if pc_send:
                         if not active:
                             active = True
@@ -732,7 +764,7 @@ class MumbleNativeGateway(QObject):
                             preroll_samples = 0
                         else:
                             send_blocks.append(raw)
-                    elif self._capture_enabled and hot:
+                    elif self._capture_enabled and hot and not self._self_mute_local:
                         last_hot = now
                         if not active:
                             active = True
