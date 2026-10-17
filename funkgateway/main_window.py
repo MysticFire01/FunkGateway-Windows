@@ -1140,6 +1140,136 @@ class MainWindow(QMainWindow):
                 return path
         return None
 
+    def _teamspeak_process_names(self):
+        return ("ts3client_win64.exe", "ts3client_win32.exe")
+
+    def _teamspeak_running(self):
+        if os.name != "nt":
+            return False
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        for name in self._teamspeak_process_names():
+            try:
+                result = subprocess.run(
+                    ["tasklist", "/FI", f"IMAGENAME eq {name}", "/NH"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    creationflags=creationflags,
+                )
+                if name.lower() in (result.stdout or "").lower():
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def _close_teamspeak_normally(self, timeout=6.0):
+        """Ask the TS3 main window to close and wait for the process to exit."""
+        if os.name != "nt":
+            return True
+        if not self._teamspeak_running():
+            return True
+
+        # Disconnect our own control/audio paths before TeamSpeak goes away.
+        try:
+            self._stop_radio_audio_bridge()
+        except Exception:
+            pass
+        try:
+            self.ts_client.close()
+        except Exception:
+            pass
+
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        script = (
+            "$names=@('ts3client_win64','ts3client_win32'); "
+            "Get-Process -Name $names -ErrorAction SilentlyContinue | "
+            "ForEach-Object { $_.CloseMainWindow() | Out-Null }"
+        )
+        try:
+            subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=creationflags,
+            )
+        except Exception as exc:
+            self.ui_log.appendPlainText("TeamSpeak schließen: " + str(exc))
+
+        deadline = time.monotonic() + float(timeout)
+        while time.monotonic() < deadline:
+            if not self._teamspeak_running():
+                return True
+            QApplication.processEvents()
+            time.sleep(0.15)
+        return not self._teamspeak_running()
+
+    def _force_close_teamspeak(self):
+        if os.name != "nt":
+            return True
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        for name in self._teamspeak_process_names():
+            try:
+                subprocess.run(
+                    ["taskkill", "/IM", name, "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    creationflags=creationflags,
+                )
+            except Exception:
+                pass
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if not self._teamspeak_running():
+                return True
+            QApplication.processEvents()
+            time.sleep(0.15)
+        return not self._teamspeak_running()
+
+    def _prepare_teamspeak_for_plugin_install(self):
+        if not self._teamspeak_running():
+            return True
+
+        answer = QMessageBox.question(
+            self,
+            "TeamSpeak schließen",
+            "TeamSpeak 3 läuft noch.\n\n"
+            "Für eine saubere Plugin-Installation/Aktualisierung muss TeamSpeak beendet werden.\n\n"
+            "TeamSpeak jetzt automatisch schließen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return False
+
+        if self._close_teamspeak_normally():
+            self.ui_log.appendPlainText("TeamSpeak wurde für das Plugin-Update beendet.")
+            return True
+
+        force = QMessageBox.question(
+            self,
+            "TeamSpeak läuft noch",
+            "TeamSpeak konnte nicht normal beendet werden.\n\n"
+            "Beenden erzwingen? Nicht gespeicherte TeamSpeak-Einstellungen könnten dabei verloren gehen.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if force != QMessageBox.StandardButton.Yes:
+            return False
+
+        if self._force_close_teamspeak():
+            self.ui_log.appendPlainText("TeamSpeak wurde für das Plugin-Update zwangsweise beendet.")
+            return True
+
+        QMessageBox.critical(
+            self,
+            "TeamSpeak Plugin",
+            "TeamSpeak konnte nicht beendet werden.\n"
+            "Die Plugin-Installation wird aus Sicherheitsgründen nicht gestartet."
+        )
+        return False
+
     def _launch_ts_plugin_installer(self):
         package = self._bundled_ts_plugin_path()
         if package is None:
@@ -1149,6 +1279,11 @@ class MainWindow(QMainWindow):
                 "Die mitgelieferte Datei FunkGateway-Audio-Bridge.ts3_plugin wurde nicht gefunden."
             )
             return False
+
+        if not self._prepare_teamspeak_for_plugin_install():
+            self.ui_log.appendPlainText("TeamSpeak Plugin-Installation abgebrochen.")
+            return False
+
         try:
             if os.name == "nt":
                 os.startfile(str(package))
@@ -1156,6 +1291,12 @@ class MainWindow(QMainWindow):
                 subprocess.Popen([str(package)])
             self.ui_log.appendPlainText(
                 "TeamSpeak Plugin-Installer gestartet: " + str(package)
+            )
+            QMessageBox.information(
+                self,
+                "TeamSpeak Plugin",
+                "Der TeamSpeak Plugin-Installer wurde gestartet.\n\n"
+                "Nach der Installation TeamSpeak bitte wieder starten."
             )
             return True
         except Exception as exc:
