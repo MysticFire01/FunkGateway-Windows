@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.35 – Mumble Zertifikat-Fix, eigene globale PTT und orange Eigenanzeige
+
+- Mumble-PC-PTT besitzt einen eigenen Shortcut unabhängig von FRN
+- Mumble-Hotkey kann lokal oder systemweit arbeiten
+- Standard-Mumble-Hotkey F10, FRN kann gleichzeitig auf einer anderen Taste bleiben
+- FRN und Mumble können parallel verbunden bleiben und getrennt gesendet werden
+- Hinweis bei identischem FRN- und Mumble-Hotkey
+- eigener Mumble-Teilnehmer zeigt beim eigenen Senden einen orangefarbenen Mund
+- grün = schweigt, orange = eigener TX, rot = anderer Sprecher, blau = Whisper
+- eigener TX-Status wird lokal verfolgt und ist nicht auf Server-Echo angewiesen
+- Zertifikat-Fix: cryptography _rust.pyd wird über den realen Installationspfad ermittelt
+- _rust.pyd wird explizit nach cryptography/hazmat/bindings in den PyInstaller-Build gelegt
+- Build bricht ab, falls _rust.pyd im fertigen Paket nicht gefunden wird
+- bleibt schlank: kein collect-all cryptography notwendig
+
 ## 0.2.34 – Mumble PC-Audio vollständig
 
 - PC-User-Modus beschriftet den Eingang als „Mikrofon-Eingang“
