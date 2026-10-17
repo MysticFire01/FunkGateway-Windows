@@ -37,8 +37,6 @@ class DtmfDecoder(QObject):
         self._last_emitted = ""
         self._last_signal_at = 0.0
         self._sequence = ""
-        self._buffer.clear()
-        self._buffer_rate = 0
         self._buffer = bytearray()
         self._buffer_rate = 0
 
@@ -56,6 +54,8 @@ class DtmfDecoder(QObject):
         self._last_emitted = ""
         self._last_signal_at = 0.0
         self._sequence = ""
+        self._buffer.clear()
+        self._buffer_rate = 0
 
     @staticmethod
     def _goertzel(samples, rate, freq):
