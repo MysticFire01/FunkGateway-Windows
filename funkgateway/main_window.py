@@ -5483,6 +5483,7 @@ class MainWindow(QMainWindow):
                         self.tx_audio_output.setCurrentIndex(idx)
                 self.tx_audio_threshold.setValue(float(audio_cfg.get("tx_threshold", -40.0)))
                 self.tx_audio_hang.setValue(int(audio_cfg.get("tx_hang_ms", 450)))
+                self.audio_tx_volume.setValue(int(audio_cfg.get("tx_volume", 100)))
 
             mumble_cfg = data.get("mumble", {})
             if hasattr(self, "mumble_enabled"):
@@ -5507,6 +5508,13 @@ class MainWindow(QMainWindow):
                     self.mumble_net_to_radio.setChecked(bool(mumble_cfg.get("net_to_radio", False)))
                     self.mumble_rx_threshold.setValue(float(mumble_cfg.get("rx_threshold", -35.0)))
                     self.mumble_rx_hang.setValue(int(mumble_cfg.get("rx_hang_ms", 700)))
+                    self.mumble_playback_volume.setValue(int(mumble_cfg.get("playback_volume", 100)))
+                    raw_volumes = mumble_cfg.get("user_volumes", {})
+                    self._mumble_user_volumes = {
+                        str(k): max(0, min(200, int(v)))
+                        for k, v in (raw_volumes.items() if isinstance(raw_volumes, dict) else [])
+                    }
+                    self.mumble_native.set_user_playback_volumes(self._mumble_user_volumes)
                     if hasattr(self, "mumble_pc_ptt_enabled"):
                         self.mumble_pc_ptt_enabled.setChecked(bool(mumble_cfg.get("pc_ptt_enabled", False)))
                     if hasattr(self, "mumble_ptt_hotkey"):
@@ -5645,6 +5653,7 @@ class MainWindow(QMainWindow):
                 "tx_output": self.tx_audio_output.currentData(),
                 "tx_threshold": self.tx_audio_threshold.value(),
                 "tx_hang_ms": self.tx_audio_hang.value(),
+                "tx_volume": self.audio_tx_volume.value(),
             },
             "parrot": {
                 "threshold": self.parrot_threshold.value(),
@@ -5706,6 +5715,8 @@ class MainWindow(QMainWindow):
                 "net_to_radio": self.mumble_net_to_radio.isChecked() if hasattr(self, "mumble_net_to_radio") else False,
                 "rx_input": self.mumble_rx_input.currentData() if hasattr(self, "mumble_rx_input") else None,
                 "playback_muted": self.mumble_local_playback.isChecked() if hasattr(self, "mumble_local_playback") else False,
+                "playback_volume": self.mumble_playback_volume.value(),
+                "user_volumes": dict(self._mumble_user_volumes),
                 "output_device": self.mumble_output.currentData() if hasattr(self, "mumble_output") else None,
                 "rx_threshold": self.mumble_rx_threshold.value() if hasattr(self, "mumble_rx_threshold") else -35.0,
                 "rx_hang_ms": self.mumble_rx_hang.value() if hasattr(self, "mumble_rx_hang") else 700,
