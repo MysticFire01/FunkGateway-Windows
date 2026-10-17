@@ -343,3 +343,13 @@ automation remains a separate option.
 The TeamSpeak plugin now resolves pending Continuous Transmission state changes
 deterministically across live bridge restarts. A fresh START/AUDIO supersedes an
 old restore request, while STOP cancels a stale enable request.
+
+
+## TeamSpeak plugin install/update helper 0.2.15
+
+FunkGateway can now compare the running TS3 bridge plugin with the bundled
+plugin package. When TeamSpeak is connected and the plugin is missing, unknown
+or older, FunkGateway offers a Yes/No install/update prompt. Choosing Yes opens
+the bundled .ts3_plugin package using TeamSpeak's normal plugin installer.
+A manual install/update button is also available on the TeamSpeak integration
+page.
