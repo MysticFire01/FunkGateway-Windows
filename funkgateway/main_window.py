@@ -18,7 +18,7 @@ from .integrations.frn_panel import FrnPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
 from .ptt import DryPTT, SerialPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
-from .radio_rx import RadioRxDetector, input_devices
+from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_devices
 
 
 class UpdateWorker(QObject):
@@ -74,6 +74,9 @@ class MainWindow(QMainWindow):
         self.radio_rx_detector.level.connect(self._radio_rx_level_changed)
         self.radio_rx_detector.error.connect(self._radio_rx_error)
         self.radio_rx_active = False
+        self.radio_audio_bridge = RadioAudioBridge(self)
+        self.radio_audio_bridge.error.connect(self._radio_bridge_error)
+        self.radio_audio_bridge.state.connect(self._radio_bridge_state_changed)
 
         self._build_update_menu()
         self._build_shell()
@@ -361,7 +364,14 @@ class MainWindow(QMainWindow):
         self.ts_commander_auto.setChecked(True)
         self.ts_commander_auto.toggled.connect(self._ts_commander_auto_changed)
 
+        self.ts_pc_ptt_commander = QCheckBox("PC-User: Channel Commander folgt eigener TeamSpeak-PTT")
+        self.ts_pc_ptt_commander.setChecked(True)
+
         self.ts_rx_input = QComboBox()
+        self.ts_audio_output = QComboBox()
+        self.ts_audio_output.setMinimumWidth(280)
+        self.ts_audio_bridge_enabled = QCheckBox("Funk-RX Audio nach TeamSpeak weiterleiten")
+        self.ts_audio_bridge_status = QLabel("Audio-Brücke: aus")
         self.ts_rx_threshold = QDoubleSpinBox()
         self.ts_rx_threshold.setRange(-80.0, -3.0)
         self.ts_rx_threshold.setDecimals(1)
@@ -376,6 +386,7 @@ class MainWindow(QMainWindow):
         self.ts_rx_level_label = QLabel("RX: —")
         self.ts_rx_state_label = QLabel("Funk-RX: aus")
         self._refresh_ts_rx_inputs()
+        self._refresh_ts_audio_outputs()
 
         found_key = read_default_api_key()
         if found_key:
@@ -406,7 +417,11 @@ class MainWindow(QMainWindow):
         tf.addRow("", ts_move)
         tf.addRow("", self.ts_commander)
         tf.addRow("", self.ts_commander_auto)
+        tf.addRow("", self.ts_pc_ptt_commander)
         tf.addRow("Funk-RX Eingang:", self.ts_rx_input)
+        tf.addRow("TeamSpeak Audio-Ausgang:", self.ts_audio_output)
+        tf.addRow("", self.ts_audio_bridge_enabled)
+        tf.addRow("Audio-Brücke:", self.ts_audio_bridge_status)
         tf.addRow("RX-Schwellwert:", self.ts_rx_threshold)
         tf.addRow("RX-Nachlauf:", self.ts_rx_hang)
         tf.addRow("RX-Pegel:", self.ts_rx_level_label)
@@ -414,8 +429,9 @@ class MainWindow(QMainWindow):
         note = QLabel(
             "TeamSpeak-Steuerung: Status, Server, eigener Client, Channel-Liste, "
             "aktive Sprecher, Channel-Wechsel und Channel Commander. "
-            "Im Funk-Gateway-Modus kann Channel Commander bereits automatisch dem Funk-RX folgen. "
-            "Das eigentliche Funk-Audio-Routing nach TeamSpeak folgt als nächster Schritt."
+            "Im Funk-Gateway-Modus kann Channel Commander automatisch dem Funk-RX folgen. "
+            "Die Audio-Brücke leitet Funk-RX zu einem gewählten Windows-Ausgang weiter; "
+            "für TeamSpeak ist dafür typischerweise ein virtuelles Audiokabel als Mikrofoneingang nötig."
         )
         note.setWordWrap(True)
         tf.addRow("", note)
@@ -511,10 +527,14 @@ class MainWindow(QMainWindow):
         self._current_mode = self.operating_mode.currentData() or "pc"
         if self._current_mode not in ("gateway", "radio_parrot"):
             self._stop_radio_rx_detector()
+            self._stop_radio_audio_bridge()
             if self.ts_commander_auto.isChecked() and self.ts_commander_state:
                 self._set_ts_commander_state(False, "Betriebsart")
-        elif self.gateway_started and self.ts_commander_auto.isChecked():
-            self._start_radio_rx_detector()
+        elif self.gateway_started:
+            if self.ts_commander_auto.isChecked():
+                self._start_radio_rx_detector()
+            if self.ts_audio_bridge_enabled.isChecked():
+                self._start_radio_audio_bridge()
         self._apply_mode()
         self._update_live_status()
 
@@ -651,6 +671,7 @@ class MainWindow(QMainWindow):
             self.start_main_btn.setEnabled(False)
             self.stop_main_btn.setEnabled(True)
             self._start_radio_rx_detector()
+            self._start_radio_audio_bridge()
             self._update_live_status()
         except Exception as exc:
             self.gateway_ptt = None
@@ -679,6 +700,7 @@ class MainWindow(QMainWindow):
             self.start_main_btn.setEnabled(True)
             self.stop_main_btn.setEnabled(False)
         self._stop_radio_rx_detector()
+        self._stop_radio_audio_bridge()
         if self.ts_commander_auto.isChecked() and self.ts_commander_state:
             self._set_ts_commander_state(False, "Gateway gestoppt")
         if not silent:
@@ -852,6 +874,53 @@ class MainWindow(QMainWindow):
             idx = self.ts_rx_input.findData(current)
             if idx >= 0:
                 self.ts_rx_input.setCurrentIndex(idx)
+
+    def _refresh_ts_audio_outputs(self):
+        if not hasattr(self, "ts_audio_output"):
+            return
+        current = self.ts_audio_output.currentData()
+        self.ts_audio_output.clear()
+        for index, name in output_devices():
+            self.ts_audio_output.addItem(f"{index}: {name}", index)
+        if current is not None:
+            idx = self.ts_audio_output.findData(current)
+            if idx >= 0:
+                self.ts_audio_output.setCurrentIndex(idx)
+
+    def _start_radio_audio_bridge(self):
+        if not self.ts_audio_bridge_enabled.isChecked():
+            return
+        if self._mode() not in ("gateway", "radio_parrot"):
+            return
+        inp = self.ts_rx_input.currentData()
+        out = self.ts_audio_output.currentData()
+        if inp is None or out is None:
+            self.ts_audio_bridge_status.setText("Audio-Brücke: Geräte fehlen")
+            return
+        try:
+            self.radio_audio_bridge.start(inp, out)
+            self.ts_audio_bridge_status.setText("Audio-Brücke: startet …")
+        except Exception as exc:
+            self._radio_bridge_error(str(exc))
+
+    def _stop_radio_audio_bridge(self):
+        try:
+            self.radio_audio_bridge.stop()
+        except Exception:
+            pass
+        if hasattr(self, "ts_audio_bridge_status"):
+            self.ts_audio_bridge_status.setText("Audio-Brücke: aus")
+
+    def _radio_bridge_state_changed(self, running):
+        if hasattr(self, "ts_audio_bridge_status"):
+            self.ts_audio_bridge_status.setText(
+                "Audio-Brücke: AKTIV" if running else "Audio-Brücke: aus"
+            )
+
+    def _radio_bridge_error(self, message):
+        if hasattr(self, "ts_audio_bridge_status"):
+            self.ts_audio_bridge_status.setText("Audio-Brücke Fehler: " + str(message))
+        self.ui_log.appendPlainText("TeamSpeak Audio-Brücke: " + str(message))
 
     def _start_radio_rx_detector(self):
         if self._mode() not in ("gateway", "radio_parrot"):
@@ -1071,6 +1140,12 @@ class MainWindow(QMainWindow):
             self.ts_last_status = True
             self.ts_last_channel = channel
             self.ts_last_speakers = list(speakers)
+
+            # PC-user mode: TeamSpeak's real local talking/PTT state is
+            # authoritative for Channel Commander.
+            if self._mode() == "pc" and self.ts_pc_ptt_commander.isChecked():
+                talking = bool(self.ts_client.self_talking())
+                self._set_ts_commander_state(talking, "eigene TeamSpeak-PTT")
         except Exception as exc:
             msg = str(exc)
             self.ts_status_label.setText("Nicht verbunden · " + msg)
@@ -1198,6 +1273,13 @@ class MainWindow(QMainWindow):
                     idx = self.ts_rx_input.findData(rx_device)
                     if idx >= 0:
                         self.ts_rx_input.setCurrentIndex(idx)
+                audio_output = ts_cfg.get("audio_output")
+                if audio_output is not None:
+                    idx = self.ts_audio_output.findData(audio_output)
+                    if idx >= 0:
+                        self.ts_audio_output.setCurrentIndex(idx)
+                self.ts_audio_bridge_enabled.setChecked(bool(ts_cfg.get("audio_bridge_enabled", False)))
+                self.ts_pc_ptt_commander.setChecked(bool(ts_cfg.get("pc_ptt_commander", True)))
                 self.ts_rx_threshold.setValue(float(ts_cfg.get("rx_threshold", -35.0)))
                 self.ts_rx_hang.setValue(int(ts_cfg.get("rx_hang_ms", 700)))
         except Exception as exc:
@@ -1228,6 +1310,9 @@ class MainWindow(QMainWindow):
                 "channel_commander": self.ts_commander.isChecked(),
                 "commander_auto": self.ts_commander_auto.isChecked(),
                 "rx_input": self.ts_rx_input.currentData(),
+                "audio_output": self.ts_audio_output.currentData(),
+                "audio_bridge_enabled": self.ts_audio_bridge_enabled.isChecked(),
+                "pc_ptt_commander": self.ts_pc_ptt_commander.isChecked(),
                 "rx_threshold": self.ts_rx_threshold.value(),
                 "rx_hang_ms": self.ts_rx_hang.value(),
             },
@@ -1255,6 +1340,7 @@ class MainWindow(QMainWindow):
             pass
         try:
             self._stop_radio_rx_detector()
+            self._stop_radio_audio_bridge()
         except Exception:
             pass
         try:
