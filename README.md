@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.8 Portable Preview**
+**0.1.9 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.8\
+FunkGateway-Windows-0.1.9\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -108,3 +108,12 @@ From 0.1.8, updates close FunkGateway through the normal window shutdown path
 so FRN, audio and global hotkey listeners are stopped before replacement.
 The external updater also waits at most 15 seconds for the old process and then
 forces it to stop if necessary before copying the new files.
+
+
+## Updater launch diagnostics
+
+From 0.1.9, FunkGateway writes `logs\\update-launch.log` before starting the
+external updater helper. The helper is launched through Windows `cmd.exe start`
+instead of Python's detached-process flags, improving reliability on older
+Windows 10 systems. The PowerShell helper itself continues to write
+`logs\\update.log`.
