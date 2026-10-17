@@ -529,3 +529,18 @@ Mumble user.
 
 No additional Qt or icon package is added. Only the cryptography dependency is
 new for certificate handling.
+
+
+## Mumble certificate packaging fix 0.2.32
+
+The Windows PyInstaller build now explicitly includes the native Rust binding
+used by `cryptography`. This fixes certificate creation/import failures with
+`No module named cryptography.hazmat.bindings._rust`.
+
+To keep the package lean, FunkGateway does not use `--collect-all cryptography`;
+it only collects the package's native binaries and explicitly includes the Rust
+binding.
+
+This release also includes the polished Mumble channel tree with live user
+counts and the colored mouth icon placed directly to the left of each
+participant name.
