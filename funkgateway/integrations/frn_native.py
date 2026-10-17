@@ -1029,9 +1029,9 @@ class FrnNativeClient:
             self.sock.settimeout(0.5)
             self.signals.connected.emit(True)
 
-            if self.cfg.audio_enabled:
-                self._start_audio()
-
+            # Do not start PortAudio/libgsm before the FRN server has accepted
+            # the login. Servers may answer AL=BLOCK/WRONG; in that case no
+            # audio worker should ever be created.
             self._set_state("LOGGING_IN_1")
             self._send(
                 (self._login_string(dyn) + "\r\n").encode("cp1252", "replace"),
@@ -1069,9 +1069,11 @@ class FrnNativeClient:
                     "FRN-SERVER BLOCK: Server hat den Zugriff blockiert. "
                     f"Aktuelle Identität: CL={self.cfg.client_type}, "
                     f"VX={self.cfg.protocol_version}. "
-                    "Zum Testen kann ein anderer legitimer FRN-Client-Typ gewählt werden; "
-                    "FunkGateway imitiert dabei keinen offiziellen Client."
+                    "Der Server akzeptiert diesen FunkGateway-Client in dieser Klasse/Version nicht."
                 )
+
+            if self.cfg.audio_enabled:
+                self._start_audio()
 
             self._set_state("IDLE")
             self._send_line("RX0")
