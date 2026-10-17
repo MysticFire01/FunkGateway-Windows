@@ -158,20 +158,29 @@ class MumblePublicServerLoader(QObject):
     loaded = Signal(object)
     error = Signal(str)
     progress = Signal(int, int)
+    sourceChanged = Signal(str, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
     def run(self):
         try:
+            source = "official"
             try:
                 servers = _load_official_list()
                 if not servers:
                     raise RuntimeError("Offizielle Mumble-Liste war leer")
-            except Exception:
+            except Exception as official_exc:
                 # Keep a fallback so the server browser still remains usable if
-                # the official service is temporarily unreachable.
+                # the official service is temporarily unreachable. The UI is
+                # told explicitly that this is the known small/capped fallback.
+                source = "legacy-fallback"
                 servers = _load_legacy_list()
+                if not servers:
+                    raise RuntimeError(
+                        "Offizielle Mumble-Liste nicht erreichbar und Fallback leer: "
+                        + str(official_exc)
+                    )
 
             # Remove duplicate host/port records while preserving the first
             # official display name/country metadata.
@@ -186,6 +195,7 @@ class MumblePublicServerLoader(QObject):
             servers = list(unique.values())
 
             total = len(servers)
+            self.sourceChanged.emit(source, total)
             self.progress.emit(0, total)
 
             # Mumble's lightweight UDP ping exposes current/max users and ping.
