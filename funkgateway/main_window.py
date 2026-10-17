@@ -116,6 +116,7 @@ class MainWindow(QMainWindow):
         self.integration_timer.start()
 
         self._load_config()
+        self._ui_level_changed()
         self._apply_mode()
         self._apply_theme_from_ui()
         self._configure_hotkey()
@@ -262,6 +263,21 @@ class MainWindow(QMainWindow):
         f.addRow("Funk-Papagei:", QLabel("Funk aufnehmen und zurückgeben; folgt"))
         f.addRow("VoIP-Papagei:", QLabel("VoIP aufnehmen und zurückgeben; folgt"))
         v.addWidget(box)
+
+        view_box = QGroupBox("Oberfläche")
+        vf = QFormLayout(view_box)
+        self.ui_level = QComboBox()
+        self.ui_level.addItem("Vereinfachte Oberfläche", "simple")
+        self.ui_level.addItem("Volle Oberfläche", "full")
+        self.ui_level.addItem("Entwickleroptionen", "developer")
+        self.ui_level.setCurrentIndex(self.ui_level.findData("full"))
+        self.ui_level.currentIndexChanged.connect(self._ui_level_changed)
+        self.ui_level_note = QLabel()
+        self.ui_level_note.setWordWrap(True)
+        vf.addRow("Ansicht:", self.ui_level)
+        vf.addRow("", self.ui_level_note)
+        v.addWidget(view_box)
+
         v.addStretch(1)
         self._scroll_tab(page, "Einrichtung")
 
@@ -311,6 +327,7 @@ class MainWindow(QMainWindow):
         self.tx_audio_status_label.setWordWrap(True)
 
         refresh = QPushButton("Audiogeräte neu laden")
+        self.tx_audio_refresh_btn = refresh
         refresh.clicked.connect(self._refresh_tx_audio_devices)
 
         f.addRow("", self.tx_audio_enabled)
@@ -368,8 +385,10 @@ class MainWindow(QMainWindow):
         self.gateway_ptt_status.setWordWrap(True)
 
         refresh = QPushButton("Serielle Ports neu laden")
+        self.gateway_ptt_refresh_btn = refresh
         refresh.clicked.connect(self._refresh_gateway_ptt_ports)
         test = QPushButton("PTT halten zum Testen")
+        self.gateway_ptt_test_btn = test
         test.pressed.connect(self._gateway_ptt_press)
         test.released.connect(self._gateway_ptt_release)
 
@@ -616,6 +635,95 @@ class MainWindow(QMainWindow):
         v.addStretch(1)
         self._scroll_tab(page, "Hilfe")
 
+    def _set_form_field_visible(self, widget, visible):
+        if widget is None:
+            return
+        widget.setVisible(bool(visible))
+        for form in self.findChildren(QFormLayout):
+            try:
+                label = form.labelForField(widget)
+            except Exception:
+                label = None
+            if label is not None:
+                label.setVisible(bool(visible))
+
+    def _ui_level_value(self):
+        if not hasattr(self, "ui_level"):
+            return "full"
+        return self.ui_level.currentData() or "full"
+
+    def _ui_level_changed(self, *_args):
+        level = self._ui_level_value()
+        simple = level == "simple"
+        developer = level == "developer"
+
+        notes = {
+            "simple": (
+                "Nur die wichtigsten Bedienfunktionen. Betriebsarten bleiben vollständig erhalten; "
+                "Feinabstimmung und Diagnose werden ausgeblendet."
+            ),
+            "full": (
+                "Alle regulären Gateway-, PC-, Papagei- und Integrationsfunktionen. "
+                "Reine Simulationshilfen bleiben verborgen."
+            ),
+            "developer": (
+                "Zusätzlich reine Test- und Simulationshilfen für Entwicklung ohne Funkhardware."
+            ),
+        }
+        if hasattr(self, "ui_level_note"):
+            self.ui_level_note.setText(notes.get(level, ""))
+
+        # Fine tuning/diagnostics hidden only in simplified view.
+        for widget in (
+            getattr(self, "tx_audio_source_mode", None),
+            getattr(self, "tx_audio_threshold", None),
+            getattr(self, "tx_audio_hang", None),
+            getattr(self, "tx_audio_level_label", None),
+            getattr(self, "tx_audio_source_label", None),
+            getattr(self, "tx_audio_refresh_btn", None),
+            getattr(self, "gateway_ptt_invert", None),
+            getattr(self, "gateway_ptt_refresh_btn", None),
+            getattr(self, "gateway_ptt_test_btn", None),
+            getattr(self, "ts_rx_threshold", None),
+            getattr(self, "ts_rx_hang", None),
+            getattr(self, "ts_rx_level_label", None),
+            getattr(self, "ts_plugin_test", None),
+            getattr(self, "ts_plugin_install", None),
+        ):
+            if widget is not None:
+                self._set_form_field_visible(widget, not simple)
+
+        # Pure simulation helpers exist only in developer view.
+        if hasattr(self, "gateway_ptt_backend"):
+            dry_idx = self.gateway_ptt_backend.findData("dry")
+            if dry_idx >= 0:
+                try:
+                    self.gateway_ptt_backend.view().setRowHidden(dry_idx, not developer)
+                except Exception:
+                    pass
+            if not developer and self.gateway_ptt_backend.currentData() == "dry":
+                serial_idx = self.gateway_ptt_backend.findData("serial")
+                if serial_idx >= 0:
+                    self.gateway_ptt_backend.setCurrentIndex(serial_idx)
+
+        self._refresh_tx_audio_devices()
+
+        # WASAPI is a real optional production feature, but keep it out of the
+        # simplified operator view. Full and Developer both expose it.
+        if hasattr(self, "tx_audio_source_mode"):
+            wasapi_idx = self.tx_audio_source_mode.findData("wasapi_system")
+            if wasapi_idx >= 0:
+                try:
+                    self.tx_audio_source_mode.view().setRowHidden(wasapi_idx, simple)
+                except Exception:
+                    pass
+            if simple and self.tx_audio_source_mode.currentData() == "wasapi_system":
+                input_idx = self.tx_audio_source_mode.findData("input")
+                if input_idx >= 0:
+                    self.tx_audio_source_mode.setCurrentIndex(input_idx)
+
+        self._tx_audio_source_mode_changed()
+
     # ------------------------------------------------------------- mode/theme
     def _mode(self):
         return self._current_mode
@@ -719,7 +827,8 @@ class MainWindow(QMainWindow):
             self.tx_audio_input.addItem(f"{index}: {name}", index)
 
         self.tx_audio_output.clear()
-        self.tx_audio_output.addItem("Kein Audioausgang (nur PTT-Test)", None)
+        if self._ui_level_value() == "developer":
+            self.tx_audio_output.addItem("Kein Audioausgang (nur PTT-Test)", None)
         for index, name in output_devices():
             self.tx_audio_output.addItem(f"{index}: {name}", index)
 
@@ -875,6 +984,11 @@ class MainWindow(QMainWindow):
     def _make_gateway_ptt(self):
         backend = self.gateway_ptt_backend.currentData()
         if backend == "dry":
+            if self._ui_level_value() != "developer":
+                raise RuntimeError(
+                    "Test-PTT ist nur in den Entwickleroptionen verfügbar. "
+                    "Bitte eine echte PTT-Schnittstelle wählen."
+                )
             return DryPTT()
         return SerialPTT(
             self.gateway_ptt_port.currentText().strip(),
@@ -1806,6 +1920,11 @@ class MainWindow(QMainWindow):
             if pos >= 0:
                 self.color_scheme.setCurrentIndex(pos)
             self.mode_colors.setChecked(bool(ui.get("mode_colors", True)))
+            if hasattr(self, "ui_level"):
+                level = str(ui.get("ui_level", "full"))
+                idx = self.ui_level.findData(level)
+                if idx >= 0:
+                    self.ui_level.setCurrentIndex(idx)
             audio_cfg = data.get("audio", {})
             if hasattr(self, "tx_audio_enabled"):
                 self.tx_audio_enabled.setChecked(bool(audio_cfg.get("tx_enabled", False)))
@@ -1878,6 +1997,7 @@ class MainWindow(QMainWindow):
                 "theme": self.theme_mode.currentText(),
                 "scheme": self.color_scheme.currentText(),
                 "mode_colors": self.mode_colors.isChecked(),
+                "ui_level": self._ui_level_value(),
             },
             "audio": {
                 "tx_enabled": self.tx_audio_enabled.isChecked(),
