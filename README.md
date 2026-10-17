@@ -281,3 +281,15 @@ In gateway/radio-parrot mode it can automatically toggle TeamSpeak Channel
 Commander: active RX enables Commander, silence disables it after the configured
 hang time. This establishes control-state coupling; actual radio-audio routing
 into TeamSpeak is implemented separately.
+
+
+## TeamSpeak audio bridge and PC PTT commander 0.2.8
+
+Radio RX can now be forwarded from a selected PortAudio input to a selected
+output device. On Windows this is intended for a virtual audio cable: select
+the cable playback endpoint as FunkGateway's output and the matching cable
+recording endpoint as TeamSpeak's microphone. Input/output sample rates may
+differ and are resampled automatically.
+
+In PC-user mode, TeamSpeak Channel Commander can follow the local TS client's
+actual talking/PTT state reported by ClientQuery.
