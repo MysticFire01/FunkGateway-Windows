@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.29 – pymumble Upstream-Referenz korrigiert
+
+- behebt den fehlgeschlagenen Vendor-Schritt aus 0.2.28
+- der angenommene Upstream-Tag 1.6.1 existiert nicht als Git-Tag
+- verwendet stattdessen den offiziellen Branch pymumble_py3
+- Build ist auf Commit 8755c7d41b8f1f91402a6218c413121b64bdce33 fest gepinnt
+- dortige pymumble_py3-Version ist 1.7
+- Paketpfad pymumble_py3 wird anschließend wie vorgesehen in den Build übernommen
+- verhindert unkontrollierte Änderungen durch spätere Upstream-Commits
+
 ## 0.2.28 – Windows-Buildfix für native Mumble-Bibliothek
 
 - behebt den GitHub-Actions-Fehler „No module named pymumble_py3“
