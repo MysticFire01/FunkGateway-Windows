@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.17 Portable Preview
+
+- FRN-Audio startet erst nach erfolgreicher Login-Stufe 2
+- bei `AL=BLOCK` oder `AL=WRONG` werden PortAudio und GSM-Codec gar nicht erst geöffnet
+- verhindert übrigbleibende `play_thread`-Threads nach abgelehnten Logins
+- BLOCK-Meldung formuliert jetzt neutral: Server akzeptiert diese Client-Klasse/Version nicht
+- Onedir/Standalone, Raumwechsel-Fix und Audio-Cleanup bleiben erhalten
+
 ## 0.1.16 Portable Preview
 
 - behebt `WARN: play_thread läuft nach 2 s noch` nach FRN-`BLOCK` oder Loginfehler
