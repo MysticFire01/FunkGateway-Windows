@@ -36,7 +36,7 @@ jobs:
           C:\msys64\usr\bin\bash.exe -lc "pacman -Sy --noconfirm mingw-w64-x86_64-gsm"
           Copy-Item "C:\msys64\mingw64\bin\libgsm.dll" "libgsm.dll"
           Copy-Item "C:\msys64\mingw64\share\licenses\gsm\license.txt" "LIBGSM-LICENSE.txt"
-          python -c "import ctypes; lib=ctypes.CDLL(r'libgsm.dll'); lib.gsm_create.restype=ctypes.c_void_p; lib.gsm_option.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.POINTER(ctypes.c_int)]; lib.gsm_option.restype=ctypes.c_int; lib.gsm_destroy.argtypes=[ctypes.c_void_p]; h=lib.gsm_create(); assert h; one=ctypes.c_int(1); rc=lib.gsm_option(h,4,ctypes.byref(one)); lib.gsm_destroy(h); assert rc != -1, 'GSM_OPT_WAV49 unsupported'; print('libgsm WAV49 OK')"
+          python -c "import ctypes,pathlib; p=str(pathlib.Path('libgsm.dll').resolve()); print('Testing',p); lib=ctypes.CDLL(p); lib.gsm_create.restype=ctypes.c_void_p; lib.gsm_option.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.POINTER(ctypes.c_int)]; lib.gsm_option.restype=ctypes.c_int; lib.gsm_destroy.argtypes=[ctypes.c_void_p]; h=lib.gsm_create(); assert h; one=ctypes.c_int(1); rc=lib.gsm_option(h,4,ctypes.byref(one)); lib.gsm_destroy(h); assert rc != -1, 'GSM_OPT_WAV49 unsupported'; print('libgsm WAV49 OK')"
 
       - name: Validate Python source
         shell: pwsh
