@@ -21,6 +21,7 @@ from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
 from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_devices
 from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge
 from .tx_audio import AudioTxEngine, SoundInputTxSource
+from .wasapi_loopback import WasapiSystemLoopbackSource
 
 
 class UpdateWorker(QObject):
@@ -84,6 +85,9 @@ class MainWindow(QMainWindow):
         )
         self.tx_audio_engine = AudioTxEngine(self)
         self.tx_audio_source = SoundInputTxSource(self.tx_audio_engine, self)
+        self.tx_wasapi_source = WasapiSystemLoopbackSource(
+            self.tx_audio_engine, APP_DIR, self
+        )
         self.tx_audio_engine.activity.connect(self._tx_audio_activity_changed)
         self.tx_audio_engine.level.connect(self._tx_audio_level_changed)
         self.tx_audio_engine.state.connect(self._tx_audio_engine_state_changed)
@@ -91,6 +95,8 @@ class MainWindow(QMainWindow):
         self.tx_audio_engine.source.connect(self._tx_audio_source_changed)
         self.tx_audio_source.state.connect(self._tx_audio_source_state_changed)
         self.tx_audio_source.error.connect(self._tx_audio_error)
+        self.tx_wasapi_source.state.connect(self._tx_audio_source_state_changed)
+        self.tx_wasapi_source.error.connect(self._tx_audio_error)
 
         self._build_update_menu()
         self._build_shell()
@@ -273,6 +279,11 @@ class MainWindow(QMainWindow):
         self.tx_audio_enabled = QCheckBox("Audioabhängige Gateway-PTT aktiv")
         self.tx_audio_enabled.setChecked(False)
 
+        self.tx_audio_source_mode = QComboBox()
+        self.tx_audio_source_mode.addItem("Audioeingang / USB-Soundkarte", "input")
+        self.tx_audio_source_mode.addItem("Windows-Systemaudio (WASAPI Loopback)", "wasapi_system")
+        self.tx_audio_source_mode.currentIndexChanged.connect(self._tx_audio_source_mode_changed)
+
         self.tx_audio_input = QComboBox()
         self.tx_audio_input.setMinimumWidth(320)
         self.tx_audio_output = QComboBox()
@@ -300,7 +311,8 @@ class MainWindow(QMainWindow):
         refresh.clicked.connect(self._refresh_tx_audio_devices)
 
         f.addRow("", self.tx_audio_enabled)
-        f.addRow("TX-Audioquelle:", self.tx_audio_input)
+        f.addRow("Quellentyp:", self.tx_audio_source_mode)
+        f.addRow("Audioeingang:", self.tx_audio_input)
         f.addRow("Funk-TX Ausgang:", self.tx_audio_output)
         f.addRow("PTT-Schwellwert:", self.tx_audio_threshold)
         f.addRow("PTT-Nachlauf:", self.tx_audio_hang)
@@ -311,9 +323,9 @@ class MainWindow(QMainWindow):
 
         note = QLabel(
             "Der Kern ist absichtlich integrationsunabhängig: Alles, was PCM-Audio liefert, "
-            "kann dieselbe RTS/DTR-PTT auslösen. Der Audioeingang dient bereits zum Testen "
-            "mit Mikrofon/USB-Soundkarte; WASAPI-Prozessquellen wie TeamSpeak oder VLC "
-            "werden an denselben Kern angeschlossen."
+            "kann dieselbe RTS/DTR-PTT auslösen. Zum Testen kann ein Mikrofon/USB-Eingang "
+            "verwendet werden. Windows-Systemaudio kann direkt per WASAPI-Loopback eingespeist "
+            "werden – damit funktionieren z. B. TeamSpeak, VLC, Browser oder Mediaplayer."
         )
         note.setWordWrap(True)
         f.addRow("", note)
@@ -328,6 +340,7 @@ class MainWindow(QMainWindow):
 
         v.addStretch(1)
         self._refresh_tx_audio_devices()
+        self._tx_audio_source_mode_changed()
         self._scroll_tab(page, "Audio")
 
     def _build_ptt(self):
@@ -681,6 +694,12 @@ class MainWindow(QMainWindow):
         )
 
     # ------------------------------------------------------- generic TX audio
+    def _tx_audio_source_mode_changed(self, *_args):
+        if not hasattr(self, "tx_audio_source_mode"):
+            return
+        is_input = (self.tx_audio_source_mode.currentData() or "input") == "input"
+        self.tx_audio_input.setEnabled(is_input)
+
     def _refresh_tx_audio_devices(self):
         if not hasattr(self, "tx_audio_input"):
             return
@@ -716,8 +735,9 @@ class MainWindow(QMainWindow):
             self.tx_audio_status_label.setText("TX-Audiokern: kein PTT-Backend")
             return
 
+        source_mode = self.tx_audio_source_mode.currentData() or "input"
         source_device = self.tx_audio_input.currentData()
-        if source_device is None:
+        if source_mode == "input" and source_device is None:
             self.tx_audio_status_label.setText("TX-Audiokern: keine Audioquelle")
             return
 
@@ -728,10 +748,13 @@ class MainWindow(QMainWindow):
                 self.tx_audio_threshold.value(),
                 self.tx_audio_hang.value(),
             )
-            self.tx_audio_source.start(
-                source_device,
-                self.tx_audio_input.currentText() or "Audioeingang",
-            )
+            if source_mode == "wasapi_system":
+                self.tx_wasapi_source.start()
+            else:
+                self.tx_audio_source.start(
+                    source_device,
+                    self.tx_audio_input.currentText() or "Audioeingang",
+                )
             self.tx_audio_status_label.setText("TX-Audiokern: gestartet")
         except Exception as exc:
             self._stop_tx_audio()
@@ -740,6 +763,10 @@ class MainWindow(QMainWindow):
     def _stop_tx_audio(self):
         try:
             self.tx_audio_source.stop()
+        except Exception:
+            pass
+        try:
+            self.tx_wasapi_source.stop()
         except Exception:
             pass
         try:
@@ -1479,6 +1506,10 @@ class MainWindow(QMainWindow):
             audio_cfg = data.get("audio", {})
             if hasattr(self, "tx_audio_enabled"):
                 self.tx_audio_enabled.setChecked(bool(audio_cfg.get("tx_enabled", False)))
+                source_mode = audio_cfg.get("tx_source_mode", "input")
+                idx = self.tx_audio_source_mode.findData(source_mode)
+                if idx >= 0:
+                    self.tx_audio_source_mode.setCurrentIndex(idx)
                 tx_input = audio_cfg.get("tx_input")
                 if tx_input is not None:
                     idx = self.tx_audio_input.findData(tx_input)
@@ -1547,6 +1578,7 @@ class MainWindow(QMainWindow):
             },
             "audio": {
                 "tx_enabled": self.tx_audio_enabled.isChecked(),
+                "tx_source_mode": self.tx_audio_source_mode.currentData(),
                 "tx_input": self.tx_audio_input.currentData(),
                 "tx_output": self.tx_audio_output.currentData(),
                 "tx_threshold": self.tx_audio_threshold.value(),
