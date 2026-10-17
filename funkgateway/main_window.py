@@ -1752,6 +1752,7 @@ class MainWindow(QMainWindow):
                 "name": name,
                 "host": host,
                 "port": port,
+                "username": str(raw.get("username") or "").strip(),
                 "locked": False,
             })
         return result
@@ -1809,6 +1810,12 @@ class MainWindow(QMainWindow):
 
         self.mumble_favorite_edit_btn.setEnabled(not locked and not is_manual)
         self.mumble_favorite_delete_btn.setEnabled(not locked and not is_manual)
+        if hasattr(self, "mumble_favorite_nick_info"):
+            username = str(data.get("username") or "").strip() if not is_manual else ""
+            self.mumble_favorite_nick_info.setText(
+                "Server-Benutzername: " + username
+                if username else "Server-Benutzername: allgemeiner Mumble-Nickname"
+            )
 
     def _prompt_mumble_favorite(self, title, existing=None):
         existing = existing or {}
@@ -1833,10 +1840,18 @@ class MainWindow(QMainWindow):
         )
         if not ok:
             return None
+        username, ok = QInputDialog.getText(
+            self, title, "Benutzername nur für diesen Server (leer = allgemeiner Mumble-Nickname):",
+            QLineEdit.EchoMode.Normal,
+            str(existing.get("username") or ""),
+        )
+        if not ok:
+            return None
         return {
             "name": name.strip(),
             "host": host.strip(),
             "port": int(port),
+            "username": username.strip(),
         }
 
     def _add_mumble_favorite(self):
@@ -2002,6 +2017,12 @@ class MainWindow(QMainWindow):
             return
 
         nickname = self.mumble_native_nick.text().strip() or "FunkGateway Windows"
+        favorite = self.mumble_favorite_select.currentData()
+        if (isinstance(favorite, dict)
+                and str(favorite.get("host") or "").strip().casefold()
+                == self.mumble_server.text().strip().casefold()
+                and int(favorite.get("port") or 64738) == self.mumble_port.value()):
+            nickname = str(favorite.get("username") or "").strip() or nickname
         self.mumble_native_connect_btn.setEnabled(False)
         self.mumble_native_status_label.setText("Native Mumble: verbindet …")
         try:
@@ -5460,6 +5481,7 @@ class MainWindow(QMainWindow):
                         "name": str(item.get("name") or ""),
                         "host": str(item.get("host") or ""),
                         "port": int(item.get("port") or 64738),
+                        "username": str(item.get("username") or "").strip(),
                         "locked": bool(item.get("locked", False)),
                     }
                     for item in getattr(self, "_mumble_favorites", [])
