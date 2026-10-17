@@ -23,21 +23,24 @@ def _run_version_probe():
 
 
 def _run_self_test_qr():
-    """Exercise the same QR generation path as the Authenticator dialog."""
+    """Verify packaged QR generation without relying on console stdout."""
     import io
+    from pathlib import Path
     import qrcode
     from PIL import Image
 
+    idx = sys.argv.index("--qr-result-file")
+    target = Path(sys.argv[idx + 1])
     uri = "otpauth://totp/FunkGateway:SelfTest?secret=JBSWY3DPEHPK3PXP&issuer=FunkGateway&algorithm=SHA1&digits=6&period=30"
     img = qrcode.make(uri)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    data = buf.getvalue()
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    data = buffer.getvalue()
     with Image.open(io.BytesIO(data)) as decoded:
         decoded.verify()
-    if not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+    if data[:8] != bytes.fromhex("89504e470d0a1a0a"):
         raise RuntimeError("QR PNG invalid")
-    print(json.dumps({"ok": True, "qr_png_bytes": len(data)}))
+    target.write_text(json.dumps({"ok": True, "qr_png_bytes": len(data)}), encoding="utf-8")
     return 0
 
 
