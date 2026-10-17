@@ -864,7 +864,8 @@ class MainWindow(QMainWindow):
         self.mumble_rx_refresh_btn = QPushButton("Audiogeräte neu laden")
         self.mumble_rx_refresh_btn.clicked.connect(self._refresh_mumble_rx_inputs)
 
-        self.mumble_local_playback = QCheckBox("Mumble-Audio lokal wiedergeben")
+        self.mumble_local_playback = QCheckBox("Mumble-Empfang stummschalten")
+        self.mumble_local_playback.setChecked(False)
         self.mumble_output = QComboBox()
         self.mumble_output.setMinimumWidth(300)
         self.mumble_output_label = QLabel("Audio-Ausgabe / Lautsprecher:")
@@ -895,7 +896,8 @@ class MainWindow(QMainWindow):
         self._refresh_mumble_rx_inputs()
 
         self.mumble_native_note = QLabel(
-            "FunkGateway arbeitet hier direkt mit PCM/Opus. Kein VB-CABLE nötig. "
+            "Im PC-User-Modus wird empfangenes Mumble-Audio standardmäßig direkt über Lautsprecher/Kopfhörer ausgegeben. "
+            "FunkGateway arbeitet direkt mit PCM/Opus; kein VB-CABLE nötig. "
             "Mumble → Funk nutzt denselben generischen TX-Audiokern und damit dieselbe "
             "RTS/DTR-PTT wie andere Audioquellen."
         )
@@ -1089,7 +1091,7 @@ class MainWindow(QMainWindow):
                 pc_ptt_enabled=(
                     self._mode() == "pc" and self.mumble_pc_ptt_enabled.isChecked()
                 ),
-                playback_enabled=self.mumble_local_playback.isChecked(),
+                playback_enabled=not self.mumble_local_playback.isChecked(),
                 playback_device=self.mumble_output.currentData(),
             )
             self._ensure_mumble_radio_tx_engine()
@@ -1731,7 +1733,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "mumble_local_playback"):
             return
         self.mumble_native.configure_playback(
-            self.mumble_local_playback.isChecked(),
+            not self.mumble_local_playback.isChecked(),
             self.mumble_output.currentData(),
         )
 
@@ -3522,7 +3524,7 @@ class MainWindow(QMainWindow):
                         if idx >= 0:
                             self.mumble_rx_input.setCurrentIndex(idx)
                     if hasattr(self, "mumble_local_playback"):
-                        self.mumble_local_playback.setChecked(bool(mumble_cfg.get("playback_enabled", False)))
+                        self.mumble_local_playback.setChecked(bool(mumble_cfg.get("playback_muted", False)))
                     wanted_out = mumble_cfg.get("output_device")
                     if wanted_out is not None and hasattr(self, "mumble_output"):
                         idx = self.mumble_output.findData(wanted_out)
@@ -3623,7 +3625,7 @@ class MainWindow(QMainWindow):
                 "radio_to_net": self.mumble_radio_to_net.isChecked() if hasattr(self, "mumble_radio_to_net") else False,
                 "net_to_radio": self.mumble_net_to_radio.isChecked() if hasattr(self, "mumble_net_to_radio") else False,
                 "rx_input": self.mumble_rx_input.currentData() if hasattr(self, "mumble_rx_input") else None,
-                "playback_enabled": self.mumble_local_playback.isChecked() if hasattr(self, "mumble_local_playback") else False,
+                "playback_muted": self.mumble_local_playback.isChecked() if hasattr(self, "mumble_local_playback") else False,
                 "output_device": self.mumble_output.currentData() if hasattr(self, "mumble_output") else None,
                 "rx_threshold": self.mumble_rx_threshold.value() if hasattr(self, "mumble_rx_threshold") else -35.0,
                 "rx_hang_ms": self.mumble_rx_hang.value() if hasattr(self, "mumble_rx_hang") else 700,
