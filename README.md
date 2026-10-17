@@ -293,3 +293,11 @@ differ and are resampled automatically.
 
 In PC-user mode, TeamSpeak Channel Commander can follow the local TS client's
 actual talking/PTT state reported by ClientQuery.
+
+
+## Native TeamSpeak plugin bridge 0.2.9
+
+Funk→TeamSpeak can use the bundled native TS3 plugin instead of a virtual audio
+cable. FunkGateway sends 48 kHz mono PCM to localhost, the plugin injects it
+into TeamSpeak capture, temporarily enables continuous transmission during
+bridge audio, and restores the previous PTT/VAD state afterwards.
