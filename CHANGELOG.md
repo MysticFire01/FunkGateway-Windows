@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.53 – Lokales Mumble-Mute unterdrückt Audio wirklich
+
+- behebt lokale Benutzer-Stummschaltung im nativen Mumble-Client
+- Rechtsklick „Lokal stummschalten“ filtert nun den PCM-Empfang dieses Benutzers tatsächlich
+- lokal stummgeschaltete Benutzer bleiben visuell im Channelbaum sichtbar
+- Mund/Sprechstatus bleibt sichtbar, obwohl ihr Ton lokal unterdrückt wird
+- lokal stummgeschaltetes Audio gelangt weder auf Lautsprecher/Kopfhörer noch in den Mumble→Funk-TX-Weg
+- serverseitiges Mute/Deaf bleibt davon getrennt
+- Self-Mute/Self-Deaf bleibt davon getrennt
+
 ## 0.2.52 – Mumble-Statusleiste und sauberes Disconnect
 
 - obere Live-Statusleiste zeigt FRN und Mumble getrennt als verbunden/getrennt
