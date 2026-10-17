@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import os
+import sys
 import html
 import json
 import math
@@ -135,8 +137,21 @@ class GsmWav49:
         found = ctypes.util.find_library("gsm")
         if found:
             candidates.append(found)
-        if __import__("os").name == "nt":
-            candidates += ["gsm.dll", "libgsm.dll", "libgsm-1.dll"]
+        if os.name == "nt":
+            # In the portable PyInstaller build libgsm.dll is shipped beside
+            # FunkGateway-Windows.exe. Use an absolute path first because
+            # Windows/Python DLL search rules do not guarantee CWD lookup.
+            if getattr(sys, "frozen", False):
+                app_dir = Path(sys.executable).resolve().parent
+            else:
+                app_dir = Path(__file__).resolve().parents[2]
+            candidates += [
+                str(app_dir / "libgsm.dll"),
+                str(app_dir / "gsm.dll"),
+                "libgsm.dll",
+                "gsm.dll",
+                "libgsm-1.dll",
+            ]
         else:
             candidates += ["libgsm.so.1", "libgsm.so"]
 
