@@ -5,7 +5,10 @@ import socket
 import struct
 import time
 import urllib.request
+import ssl
 import xml.etree.ElementTree as ET
+
+import certifi
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PySide6.QtCore import QObject, Signal
@@ -74,11 +77,16 @@ def _download(url: str, accept: str) -> tuple[bytes, object]:
     request = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "FunkGateway-Windows/0.2",
+            "User-Agent": "Mumble/1.5.939 FunkGateway-Windows",
             "Accept": accept,
+            "Accept-Encoding": "identity",
         },
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
+    # Frozen Windows builds must not depend on the machine's Python/OpenSSL CA
+    # setup. certifi is already bundled for the updater and gives us a stable
+    # trust store for publist.mumble.info as well.
+    context = ssl.create_default_context(cafile=certifi.where())
+    with urllib.request.urlopen(request, timeout=20, context=context) as response:
         return response.read(), response.headers
 
 
@@ -159,6 +167,7 @@ class MumblePublicServerLoader(QObject):
     error = Signal(str)
     progress = Signal(int, int)
     sourceChanged = Signal(str, int)
+    sourceDetail = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -172,9 +181,12 @@ class MumblePublicServerLoader(QObject):
                     raise RuntimeError("Offizielle Mumble-Liste war leer")
             except Exception as official_exc:
                 # Keep a fallback so the server browser still remains usable if
-                # the official service is temporarily unreachable. The UI is
-                # told explicitly that this is the known small/capped fallback.
+                # the official service is temporarily unreachable. Preserve the
+                # real exception so the UI can explain WHY fallback is active.
                 source = "legacy-fallback"
+                self.sourceDetail.emit(
+                    f"{type(official_exc).__name__}: {official_exc}"
+                )
                 servers = _load_legacy_list()
                 if not servers:
                     raise RuntimeError(
