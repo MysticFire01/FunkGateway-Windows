@@ -128,7 +128,7 @@ class FrnPanel(QWidget):
         self.audio_enabled=QCheckBox('FRN-Audio aktiv'); self.audio_enabled.setChecked(True); self.audio_in=QComboBox(); self.audio_out=QComboBox(); rb=QPushButton('Audiogeräte neu laden'); rb.clicked.connect(self.refresh_audio_devices); test_out=QPushButton('Audio-Ausgang testen'); test_out.clicked.connect(self.test_audio_output)
         self.connect_btn=QPushButton('Verbinden'); self.disconnect_btn=QPushButton('Trennen'); self.disconnect_btn.setEnabled(False); self.connect_btn.clicked.connect(self.connect_frn); self.disconnect_btn.clicked.connect(self.disconnect_frn)
         br=QHBoxLayout(); br.addWidget(self.connect_btn); br.addWidget(self.disconnect_btn)
-        compat_note=QLabel('Kompatibilität: Standardmäßig wird CL passend zum FunkGateway-Modus gewählt. VX 2014003 ist die verbreitete FRN-Client-Protokollversion; <SV>2014004 in Serverantworten ist die Server-Version und nicht als VX zu übernehmen.'); compat_note.setWordWrap(True)
+        compat_note=QLabel('Kompatibilität: CL und BC werden protokollgerecht gekoppelt: PC only (CL=2) sendet BC=PC Only, Crosslink (CL=0) sendet BC=Crosslink. Gateway (CL=1) verwendet das Band-/Kanal-Feld. VX 2014003 ist die FRN-Client-Protokollversion.'); compat_note.setWordWrap(True)
         for label,obj in [('SystemManager:',self.manager),('Server:',self.server),('Port:',self.port),('Raum:',self.room),('E-Mail:',self.email),('Passwort:',self.password),('',self.show_password),('',self.main_password_fallback),('Rufzeichen / Name:',self.callsign),('Beschreibung:',self.description),('Band / Kanal:',self.band),('Land:',self.country),('Stadt / Bereich:',self.city),('FRN Client-Typ (CL):',self.client_type),('FRN Version (VX):',self.protocol_version),('',compat_note),('',self.audio_enabled),('Audio Eingang:',self.audio_in),('Audio Ausgang:',self.audio_out),('',rb),('',test_out),('',br)]: f.addRow(label,obj)
         tabs.addTab(w,'Verbindung')
         # Servers & rooms
@@ -186,9 +186,23 @@ class FrnPanel(QWidget):
             client_type=1 if radio_auto else 2
         else:
             client_type=int(selected)
-        vx=self.protocol_version.text().strip() or '20261016'
+        vx=self.protocol_version.text().strip() or '2014003'
+
+        # FRN protocol requires BC to match the selected client class.
+        # PC-only and Crosslink are fixed protocol strings, not free-form bands.
+        if client_type == 2:
+            band_channel='PC Only'
+        elif client_type == 0:
+            band_channel='Crosslink'
+        else:
+            band_channel=self.band.text().strip()
+            if not band_channel:
+                raise ValueError(
+                    'Für Gateway (CL=1) muss Band / Kanal nach FRN-Format angegeben werden.'
+                )
+
         pulse_input='funkgateway_rx_source' if radio_auto else None
-        return FrnConfig(self.manager.currentData(),self.server.text().strip(),self.port.value(),self.email.text().strip(),self.password.text(),self.callsign.text().strip(),vx,client_type,self.band.text().strip(),self.description.text().strip(),self.country.text().strip(),self.city.text().strip(),self.room.text().strip(),self.audio_in.currentData(),self.audio_out.currentData(),self.audio_enabled.isChecked(),pulse_input,self.main_password_fallback.isChecked())
+        return FrnConfig(self.manager.currentData(),self.server.text().strip(),self.port.value(),self.email.text().strip(),self.password.text(),self.callsign.text().strip(),vx,client_type,band_channel,self.description.text().strip(),self.country.text().strip(),self.city.text().strip(),self.room.text().strip(),self.audio_in.currentData(),self.audio_out.currentData(),self.audio_enabled.isChecked(),pulse_input,self.main_password_fallback.isChecked())
 
     def connect_frn(self):
         try: cfg=self._cfg()
