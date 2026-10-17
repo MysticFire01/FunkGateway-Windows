@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.17 – TeamSpeak-Prozess zuverlässig beenden
+
+- zuverlässigere Erkennung laufender TeamSpeak-3-Prozesse über PowerShell/Get-Process
+- behandelt den Fall, dass TeamSpeak beim Fensterschließen nur im Hintergrund/Tray weiterläuft
+- nach Zustimmung kann der verbleibende TS3-Prozess gezielt beendet werden
+- Plugin-Installer startet erst, wenn der TeamSpeak-Prozess wirklich weg ist
+- verständlichere Rückfrage beim Hintergrundprozess
+
 ## 0.2.16 – TeamSpeak vor Plugin-Update sauber beenden
 
 - vor Installation/Aktualisierung des TS3-Plugins wird geprüft, ob TeamSpeak 3 läuft
