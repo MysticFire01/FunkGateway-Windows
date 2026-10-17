@@ -665,3 +665,13 @@ The official request now uses the current Mumble 1.5.939 release identifier.
 The Windows build pins cryptography to 43.0.3. The packaged executable is tested
 after PyInstaller with `--self-test-cert`; release creation is blocked unless
 the frozen executable can generate and parse an X.509 certificate successfully.
+
+
+## Certificate release validation fix 0.2.45
+
+The packaged certificate backend already passed its internal in-memory test in
+0.2.44, but the Windows GUI executable returned an unreliable process exit code
+when invoked from GitHub Actions. The release workflow now validates the JSON
+self-test result itself and requires `"ok": true`. This allows the corrected
+cryptography runtime package to be released under a fresh version/tag instead
+of leaving users on a stale broken 0.2.44 package.
