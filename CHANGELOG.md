@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.34 – Mumble PC-Audio vollständig
+
+- PC-User-Modus beschriftet den Eingang als „Mikrofon-Eingang“
+- Funk-Gateway-Modus verwendet weiterhin „Funk-RX Eingang“
+- neue Auswahl „Lautsprecher / Kopfhörer“ für nativen Mumble-PC-Empfang
+- Schalter „Mumble-Audio lokal wiedergeben“
+- native Mumble-Audiodaten werden direkt über sounddevice auf das gewählte Windows-Ausgabegerät ausgegeben
+- keine virtuelle Soundkarte nötig
+- Ausgabegerät und Wiedergabe-Schalter werden portabel gespeichert
+- Audiogeräte-Aktualisierung lädt Ein- und Ausgänge gemeinsam neu
+- Mumble → Funk und lokale PC-Wiedergabe können unabhängig voneinander aktiviert werden
+- enthält weiterhin den unabhängigen lokalen/systemweiten Mumble-PTT-Hotkey aus 0.2.33
+- eigener sprechender Mumble-Benutzer wird orange angezeigt; andere Sprecher rot, Whisper blau
+
 ## 0.2.33 – Eigener Mumble-Sprechstatus orange
 
 - eigener Mumble-Teilnehmer wird in der Teilnehmerliste erkannt
