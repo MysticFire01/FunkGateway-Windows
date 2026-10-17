@@ -398,3 +398,12 @@ gateway is running. If TeamSpeak or the plugin disappears and later returns,
 the bridge is automatically re-armed without restarting the whole gateway.
 Plugin-side state is cleared on TeamSpeak disconnect so old Continuous
 Transmission state cannot leak into a new connection.
+
+
+## Reliable TS3 process shutdown 0.2.20
+
+Plugin installation now uses a dual Windows process strategy. FunkGateway checks
+known TeamSpeak 3 executable names with tasklist and falls back to PowerShell
+process discovery. If the user approves forced shutdown, taskkill /T /F is used
+first, followed by a PowerShell Stop-Process fallback. The plugin installer is
+only launched after TeamSpeak is confirmed stopped.
