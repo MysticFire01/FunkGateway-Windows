@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.20 – TeamSpeak vor Plugin-Update zuverlässig beenden
+
+- robustere Erkennung laufender TeamSpeak-3-Prozesse
+- bekannte Prozessnamen werden per tasklist geprüft
+- zusätzliche PowerShell-Fallback-Erkennung für abweichende TeamSpeak-Namen
+- erzwungenes Beenden nutzt zuerst taskkill /T /F
+- zusätzlicher PowerShell Stop-Process-Fallback
+- Plugin-Installer startet weiterhin erst, wenn TeamSpeak wirklich beendet ist
+- klarerer Hinweis, falls Windows den Prozess trotzdem nicht beenden kann
+
 ## 0.2.19 – Integrationsansichten + TeamSpeak-Härtung
 
 - drei Oberflächenstufen wirken jetzt auch auf FRN und TeamSpeak
