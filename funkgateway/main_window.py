@@ -28,7 +28,7 @@ from .integrations.mumble_native import MumbleNativeGateway
 from .integrations.mumble_public import MumblePublicServerLoader
 from .mumble_certificates import (
     list_certificates, create_certificate, import_pkcs12, import_pem,
-    delete_certificate,
+    delete_certificate, certificate_backend_status,
 )
 from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_devices
 from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge, PLUGIN_VERSION as TS_PLUGIN_VERSION
@@ -114,6 +114,7 @@ class MainWindow(QMainWindow):
         self._mumble_public_thread = None
         self._mumble_public_worker = None
         self._mumble_public_servers = []
+        self._mumble_public_source = ""
         self._mumble_pc_ptt_active = False
         self._mumble_favorites = [dict(item) for item in DEFAULT_MUMBLE_FAVORITES]
         self.ts_last_status = None
@@ -1001,6 +1002,7 @@ class MainWindow(QMainWindow):
 
         self.mumble_cert_select = QComboBox()
         self.mumble_cert_refresh_btn = QPushButton("Zertifikate neu laden")
+        self.mumble_cert_test_btn = QPushButton("Zertifikatsmodul prüfen")
         self.mumble_cert_create_btn = QPushButton("Neues Zertifikat erstellen")
         self.mumble_cert_import_p12_btn = QPushButton("P12 / PFX importieren")
         self.mumble_cert_import_pem_btn = QPushButton("PEM Zertifikat + Schlüssel importieren")
@@ -1008,8 +1010,11 @@ class MainWindow(QMainWindow):
         self.mumble_register_btn = QPushButton("Aktuellen Mumble-Benutzer registrieren")
         self.mumble_cert_info = QLabel("Kein Zertifikat ausgewählt")
         self.mumble_cert_info.setWordWrap(True)
+        self.mumble_cert_backend_status = QLabel("Zertifikatsmodul: noch nicht geprüft")
+        self.mumble_cert_backend_status.setWordWrap(True)
 
         self.mumble_cert_refresh_btn.clicked.connect(self._refresh_mumble_certificates)
+        self.mumble_cert_test_btn.clicked.connect(self._test_mumble_certificate_backend)
         self.mumble_cert_create_btn.clicked.connect(self._create_mumble_certificate)
         self.mumble_cert_import_p12_btn.clicked.connect(self._import_mumble_p12)
         self.mumble_cert_import_pem_btn.clicked.connect(self._import_mumble_pem)
@@ -1019,11 +1024,13 @@ class MainWindow(QMainWindow):
 
         cv.addWidget(self.mumble_cert_select)
         cv.addWidget(self.mumble_cert_info)
+        cv.addWidget(self.mumble_cert_backend_status)
 
         row = QWidget()
         rh = QHBoxLayout(row)
         rh.setContentsMargins(0, 0, 0, 0)
         rh.addWidget(self.mumble_cert_refresh_btn)
+        rh.addWidget(self.mumble_cert_test_btn)
         rh.addWidget(self.mumble_cert_create_btn)
         cv.addWidget(row)
         cv.addWidget(self.mumble_cert_import_p12_btn)
@@ -1041,6 +1048,7 @@ class MainWindow(QMainWindow):
         cv.addStretch(1)
         self.mumble_tabs.addTab(mw, "Zertifikate")
         self._refresh_mumble_certificates()
+        QTimer.singleShot(0, lambda: self._test_mumble_certificate_backend(show_dialog=False))
 
         self.integration_tabs.addTab(mumble, "Mumble")
         self._refresh_mumble_favorites(select_id="mumble_funk_main")
@@ -1396,6 +1404,7 @@ class MainWindow(QMainWindow):
         worker.loaded.connect(self._mumble_public_loaded)
         worker.error.connect(self._mumble_public_error)
         worker.progress.connect(self._mumble_public_progress)
+        worker.sourceChanged.connect(self._mumble_public_source_changed)
         worker.loaded.connect(thread.quit)
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
@@ -1403,10 +1412,31 @@ class MainWindow(QMainWindow):
         thread.finished.connect(self._mumble_public_finished)
         thread.start()
 
+    def _mumble_public_source_changed(self, source, total):
+        self._mumble_public_source = str(source or "")
+        if self._mumble_public_source == "official":
+            self.mumble_public_status.setText(
+                f"Quelle: offizielle Mumble-Liste · {int(total)} Server"
+            )
+            self.mumble_public_status.setStyleSheet("")
+        else:
+            self.mumble_public_status.setText(
+                f"ACHTUNG: nur Fallback-Liste · {int(total)} Server "
+                "(bekannt auf ca. 50 Einträge begrenzt)"
+            )
+            self.mumble_public_status.setStyleSheet(
+                "color:#F2994A;font-weight:bold;"
+            )
+
     def _mumble_public_progress(self, done, total):
         if total:
+            prefix = (
+                "Offizielle Liste"
+                if self._mumble_public_source == "official"
+                else "Fallback-Liste"
+            )
             self.mumble_public_status.setText(
-                f"Live-Status wird abgefragt: {int(done)}/{int(total)} Server"
+                f"{prefix}: Live-Status {int(done)}/{int(total)} Server"
             )
 
     def _mumble_public_loaded(self, servers):
@@ -1529,10 +1559,22 @@ class MainWindow(QMainWindow):
                 or (query and len(grouped) <= 5)
             )
 
+        source_text = (
+            "offizielle Mumble-Liste"
+            if self._mumble_public_source == "official"
+            else ("Fallback-Liste" if self._mumble_public_source else "Quelle unbekannt")
+        )
         self.mumble_public_status.setText(
             f"{visible_count} öffentliche Server angezeigt"
             + (f" · {len(self._mumble_public_servers)} insgesamt" if self._mumble_public_servers else "")
+            + f" · {source_text}"
         )
+        if self._mumble_public_source == "legacy-fallback":
+            self.mumble_public_status.setStyleSheet(
+                "color:#F2994A;font-weight:bold;"
+            )
+        else:
+            self.mumble_public_status.setStyleSheet("")
         self.mumble_public_use_btn.setEnabled(False)
 
     def _mumble_public_selection_changed(self):
@@ -2003,7 +2045,47 @@ class MainWindow(QMainWindow):
             f"Gültig bis: {info.get('not_after','')}"
         )
 
+    def _test_mumble_certificate_backend(self, show_dialog=True):
+        result = certificate_backend_status()
+        if result.get("ok"):
+            text = (
+                "Zertifikatsmodul: OK · cryptography "
+                + str(result.get("version") or "")
+            )
+            self.mumble_cert_backend_status.setText(text)
+            self.mumble_cert_backend_status.setStyleSheet(
+                "color:#2E9D57;font-weight:bold;"
+            )
+            if show_dialog:
+                QMessageBox.information(
+                    self,
+                    "Mumble Zertifikate",
+                    "Zertifikatsmodul ist vollständig funktionsfähig.\n\n"
+                    + "cryptography "
+                    + str(result.get("version") or "")
+                )
+            return True
+
+        error = str(result.get("error") or "Unbekannter Fehler")
+        self.mumble_cert_backend_status.setText(
+            "Zertifikatsmodul: FEHLER · " + error
+        )
+        self.mumble_cert_backend_status.setStyleSheet(
+            "color:#E53935;font-weight:bold;"
+        )
+        if show_dialog:
+            QMessageBox.warning(
+                self,
+                "Mumble Zertifikate",
+                "Das Zertifikatsmodul ist im Windows-Paket nicht vollständig.\n\n"
+                + error
+            )
+        return False
+
     def _create_mumble_certificate(self):
+        if not self._test_mumble_certificate_backend(show_dialog=False):
+            self._test_mumble_certificate_backend(show_dialog=True)
+            return
         name, ok = QInputDialog.getText(
             self, "Mumble Zertifikat",
             "Name für das neue Zertifikat:",
@@ -2019,6 +2101,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Mumble Zertifikat", str(exc))
 
     def _import_mumble_p12(self):
+        if not self._test_mumble_certificate_backend(show_dialog=False):
+            self._test_mumble_certificate_backend(show_dialog=True)
+            return
         path, _ = QFileDialog.getOpenFileName(
             self, "Mumble P12/PFX importieren", "",
             "PKCS#12 (*.p12 *.pfx);;Alle Dateien (*.*)"
@@ -2039,6 +2124,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Mumble Zertifikat", str(exc))
 
     def _import_mumble_pem(self):
+        if not self._test_mumble_certificate_backend(show_dialog=False):
+            self._test_mumble_certificate_backend(show_dialog=True)
+            return
         cert, _ = QFileDialog.getOpenFileName(
             self, "PEM Zertifikat wählen", "", "PEM (*.pem *.crt *.cer);;Alle Dateien (*.*)"
         )
