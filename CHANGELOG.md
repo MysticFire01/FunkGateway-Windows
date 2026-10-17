@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.50 – Self-Mute / Self-Deaf für FRN und Mumble
+
+- Mumble Teilnehmerbereich erhält klickbare Self-Mute- und Self-Deaf-Schalter
+- Mumble Self-Mute wird als echter Mumble self_mute Status an den Server gemeldet
+- Mumble Self-Deaf wird als echter Mumble self_deaf Status an den Server gemeldet
+- Mumble Self-Mute beendet eine laufende PC-PTT sofort und blockiert weitere Audioaussendung
+- Mumble Self-Deaf unterdrückt zusätzlich sofort die lokale Wiedergabe
+- Status wird aus der eigenen Teilnehmerzeile zurück in die Buttons synchronisiert
+- FRN Teilnehmerbereich erhält dieselben beiden Bedienknöpfe
+- FRN „Mikro stumm“ blockiert lokale FRN-PTT/TX-Audio
+- FRN „Ton aus / Deaf“ unterdrückt nur die lokale FRN-Wiedergabe
+- die Bedienung ist damit zwischen FRN und Mumble möglichst einheitlich
+
 ## 0.2.49 – Offizielle Mumble-Serverliste über QtNetwork
 
 - behebt den Fallback-Grund:
