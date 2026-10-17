@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import audioop
 import os
 import sys
 import html
@@ -631,27 +632,65 @@ class FrnNativeClient:
             else:
                 if sd is None:
                     raise RuntimeError("sounddevice ist nicht initialisiert.")
+                # Windows audio devices frequently expose 44.1/48 kHz as their
+                # real capture rate. Opening them directly at 8 kHz can succeed
+                # but still yield silence on some WASAPI/MME drivers. Capture at
+                # the device's default rate and resample to FRN's fixed 8 kHz.
+                input_rate = FRN_SAMPLE_RATE
+                try:
+                    info = sd.query_devices(self.cfg.audio_input, "input")
+                    default_rate = int(round(float(info.get("default_samplerate") or 0)))
+                    if default_rate >= FRN_SAMPLE_RATE:
+                        input_rate = default_rate
+                except Exception:
+                    pass
+
+                input_block = max(
+                    FRN_AUDIO_SAMPLES,
+                    int(round(FRN_AUDIO_SAMPLES * input_rate / FRN_SAMPLE_RATE)),
+                )
                 self.input_stream = sd.RawInputStream(
-                    samplerate=FRN_SAMPLE_RATE,
-                    blocksize=FRN_AUDIO_SAMPLES,
+                    samplerate=input_rate,
+                    blocksize=input_block,
                     channels=1,
                     dtype="int16",
                     device=self.cfg.audio_input,
                     latency="low",
                 )
                 self.input_stream.start()
-                self.signals.log.emit("FRN TX-Audio gestartet.")
+                self.signals.log.emit(
+                    f"FRN TX-Audio gestartet: Mikrofon {input_rate} Hz -> FRN 8000 Hz."
+                )
+
+                rate_state = None
+                pending_8k = bytearray()
                 while (
                     not self.stop_evt.is_set()
                     and self.want_tx.is_set()
                     and self.tx_granted_evt.is_set()
                 ):
-                    pcm, overflow = self.input_stream.read(FRN_AUDIO_SAMPLES)
-                    pcm = bytes(pcm)
-                    self.signals.audio_level.emit(rms_dbfs(pcm))
+                    raw, overflow = self.input_stream.read(input_block)
+                    raw = bytes(raw)
                     if overflow:
                         self.signals.log.emit("WARN: Audio-Eingang hatte einen Overflow.")
-                    self._send(b"TX1\r\n" + self.codec.encode_packet(pcm))
+
+                    # Show the actual microphone level before resampling so the
+                    # UI reflects what Windows is delivering from the device.
+                    self.signals.audio_level.emit(rms_dbfs(raw))
+
+                    if input_rate == FRN_SAMPLE_RATE:
+                        converted = raw
+                    else:
+                        converted, rate_state = audioop.ratecv(
+                            raw, 2, 1, input_rate, FRN_SAMPLE_RATE, rate_state
+                        )
+                    pending_8k.extend(converted)
+
+                    frame_bytes = FRN_AUDIO_SAMPLES * 2
+                    while len(pending_8k) >= frame_bytes:
+                        pcm = bytes(pending_8k[:frame_bytes])
+                        del pending_8k[:frame_bytes]
+                        self._send(b"TX1\r\n" + self.codec.encode_packet(pcm))
             if self.sock and not self.stop_evt.is_set():
                 self._send_line("RX0")
                 self._set_state("IDLE")
