@@ -455,15 +455,19 @@ class MumbleNativeGateway(QObject):
             if channel_id is None:
                 channel_id = self._prop(user, "channel", None)
             channel_path = self._channel_path_by_id(channel_id)
-            muted = bool(self._prop(user, "mute", False) or self._prop(user, "self_mute", False))
-            deaf = bool(self._prop(user, "deaf", False) or self._prop(user, "self_deaf", False))
+            server_mute = bool(self._prop(user, "mute", False) or self._prop(user, "suppress", False))
+            server_deaf = bool(self._prop(user, "deaf", False))
+            local_mute = bool(self._prop(user, "self_mute", False))
+            local_deaf = bool(self._prop(user, "self_deaf", False))
             result.append({
                 "name": name,
                 "channel": channel_path,
                 "talking": name in active,
                 "speech_mode": active.get(name, ""),
-                "muted": muted,
-                "deaf": deaf,
+                "server_mute": server_mute,
+                "server_deaf": server_deaf,
+                "local_mute": local_mute,
+                "local_deaf": local_deaf,
                 "current_channel": (
                     current_channel_id is not None
                     and channel_id is not None
@@ -504,7 +508,7 @@ class MumbleNativeGateway(QObject):
 
     def _start_capture(self):
         self._stop_capture()
-        if not self._capture_enabled:
+        if not (self._capture_enabled or self._pc_ptt_enabled):
             return
         if sd is None:
             self.error.emit("Mumble Funk-RX: sounddevice ist nicht verfügbar.")
