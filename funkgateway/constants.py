@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "FunkGateway Windows"
-VERSION = "0.1.8"
+VERSION = "0.1.9"
 
 if getattr(sys, "frozen", False):
     APP_DIR = Path(sys.executable).resolve().parent
