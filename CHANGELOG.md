@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.13 Portable Preview
+
+- neuer Button „Audio-Ausgang testen“ im FRN-Verbindungsbereich
+- Testton läuft direkt über das aktuell gewählte Windows-Ausgabegerät
+- Test verwendet die native/default Sample-Rate des Geräts
+- RX- und TX-Pegel fallen nach etwa 0,8 s ohne neue Samples automatisch auf Ruhe zurück
+- behebt eingefrorene Pegelbalken nach Ende von RX/TX
+- Updater-, GSM- und Resampling-Fixes bleiben erhalten
+
 ## 0.1.12 Portable Preview
 
 - behebt Updater-Fehler „Der Netzwerkpfad wurde nicht gefunden“
