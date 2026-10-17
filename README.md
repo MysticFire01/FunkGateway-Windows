@@ -458,3 +458,18 @@ a Windows virtual audio cable:
 The normal desktop Mumble client may remain open in parallel. The native gateway
 connection has its own nickname/password and can load/move through the server's
 channel list.
+
+
+## FRN-style Mumble integration 0.2.26
+
+The native Mumble integration is now organized like the FRN integration:
+
+- Connection: server, nickname, native connect/disconnect and optional desktop
+  client controls.
+- Channels: server channel list and native gateway channel switching.
+- Participants: live users, channel paths, speaking state and mute/deaf status.
+- Audio / PTT: radio-to-Mumble and Mumble-to-radio controls plus separate live
+  level meters in both directions.
+
+The native Mumble client remains independent of the desktop Mumble application
+and continues to avoid Windows virtual audio cables.
