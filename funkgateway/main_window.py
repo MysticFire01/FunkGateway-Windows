@@ -2970,6 +2970,9 @@ class MainWindow(QMainWindow):
             if mode != "pc":
                 self._mumble_pc_ptt_release()
 
+        if hasattr(self, "dtmf_enabled"):
+            self._configure_dtmf()
+
         for m, button in self.mode_cards.items():
             if m == mode:
                 c = MODE_COLORS[m] if self.mode_colors.isChecked() else palette.get("accent", "#2F80ED")
@@ -3331,17 +3334,20 @@ class MainWindow(QMainWindow):
             return
         pin = self.dtmf_pin.text().strip()
         valid_pin = pin.isdigit() and 4 <= len(pin) <= 8
-        enabled = self.dtmf_enabled.isChecked() and valid_pin
+        mode_ok = self._mode() in ("gateway", "radio_parrot")
+        enabled = self.dtmf_enabled.isChecked() and valid_pin and mode_ok
         self.dtmf_decoder.configure(enabled=enabled)
-        if enabled and self._mode() in ("gateway", "radio_parrot"):
+        if enabled:
             if hasattr(self, "radio_rx_detector") and not self.radio_rx_detector.running:
                 self._start_radio_rx_detector()
-        elif not enabled and not self.gateway_started:
+        elif not self.gateway_started:
             self._stop_radio_rx_detector()
         if not self.dtmf_enabled.isChecked():
             self.dtmf_status.setText("DTMF: aus")
         elif not valid_pin:
             self.dtmf_status.setText("DTMF: bitte 4–8 Ziffern als PIN eingeben")
+        elif not mode_ok:
+            self.dtmf_status.setText("DTMF: wartet auf Funk-Gateway/Funk-Papagei")
         else:
             self.dtmf_status.setText("DTMF: bereit · Befehle mit PIN geschützt")
 
