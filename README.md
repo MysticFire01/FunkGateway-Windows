@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.0 Windows Preview**
+**0.1.1 Portable Preview**
 
 Initial goals:
 
@@ -13,10 +13,27 @@ Initial goals:
 - FRN server, room and participant lists
 - global FRN PTT hotkey via `pynput`
 - Windows audio device enumeration via `sounddevice`
-- configuration in `%APPDATA%\FunkGateway`
-- standalone EXE build via GitHub Actions
+- portable configuration beside the EXE (`config\\config.json`)
+- portable standalone EXE build via GitHub Actions
 
 The Linux project remains separate at `MysticFire01/Funkgateway`.
+
+## Portable mode
+
+The packaged Windows EXE stores all FunkGateway-owned writable data on the same
+drive as the application:
+
+```text
+FunkGateway-Windows-0.1.1\
+  FunkGateway-Windows.exe
+  config\
+    config.json
+  logs\
+    gateway.log
+```
+
+No FunkGateway configuration is written to `%APPDATA%` in the portable build.
+This makes it suitable for running directly from an external HDD/SSD or USB drive.
 
 ## Important preview note
 
