@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.10 – Generischer Audio-TX und WASAPI-Systemaudio
+
+- neuer integrationsunabhängiger `AudioTxEngine`
+- PTT hängt nur noch an tatsächlicher TX-Audioaktivität, nicht an TeamSpeak oder einem bestimmten Programm
+- beliebige PCM-Quellen können denselben Funk-TX-/RTS-/DTR-Weg speisen
+- auswählbarer Audioeingang/USB-Soundkarte als TX-Quelle
+- Windows-Systemaudio als Quelle über nativen WASAPI-Loopback-Helfer
+- damit können z. B. TeamSpeak, VLC, Browser oder Mediaplayer denselben Gateway-TX auslösen
+- einstellbarer PTT-Schwellwert und Nachlauf
+- kurzer Audio-Pre-Roll gegen abgeschnittene erste Silben
+- Funk-TX-Ausgang frei wählbar; „nur PTT-Test“ ohne Audioausgang möglich
+- NOT-AUS stoppt den automatischen TX-Audioweg und verhindert sofortiges Wiederauftasten
+- TeamSpeak-Plugin-Brücke aus 0.2.9 bleibt für Funk → TeamSpeak erhalten
+
 ## 0.2.9 – Direkte TeamSpeak-Plugin-Audiobrücke
 
 - neues natives TeamSpeak-3-Plugin „FunkGateway Audio Bridge“
