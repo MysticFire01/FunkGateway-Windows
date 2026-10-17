@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.7 – TeamSpeak Channel Commander folgt Funk-RX
+
+- plattformübergreifender Funk-RX-Audioaktivitätsdetektor
+- wählbarer Funk-RX-Audioeingang
+- einstellbarer RX-Schwellwert in dBFS
+- einstellbare RX-Nachlaufzeit
+- im Funk-Gateway/Funk-Papagei-Modus kann Channel Commander automatisch dem Funk-RX folgen
+- Funk-RX aktiv → Channel Commander EIN
+- Funk-RX frei → Channel Commander AUS nach Nachlaufzeit
+- manuelle Commander-Steuerung bleibt für Test/PC-User verfügbar
+- Gateway-Stop und Betriebsartwechsel lösen den automatischen Commander sicher
+
 ## 0.2.6 – TeamSpeak Steuerung
 
 - TeamSpeak-Servername wird angezeigt
