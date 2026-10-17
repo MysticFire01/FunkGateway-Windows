@@ -473,3 +473,16 @@ The native Mumble integration is now organized like the FRN integration:
 
 The native Mumble client remains independent of the desktop Mumble application
 and continues to avoid Windows virtual audio cables.
+
+
+## Public Mumble server browser 0.2.27
+
+Mumble now includes a public server browser grouped by country. Countries are
+listed alphabetically and servers inside a country can be sorted by name,
+current user count, ping, or occupancy. Search and country filters are
+available.
+
+FunkGateway augments the public registry metadata with Mumble's lightweight UDP
+server ping, which can report the current/max user count and round-trip time
+without joining the server. A selected public server can be copied directly
+into the native Mumble connection settings.
