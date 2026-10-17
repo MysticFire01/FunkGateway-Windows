@@ -679,23 +679,43 @@ class MainWindow(QMainWindow):
         # ---------------------------------------------------------- Channels
         mw = QWidget()
         cf = QVBoxLayout(mw)
-        self.mumble_native_channel_select = QComboBox()
-        self.mumble_native_channel_select.setMinimumWidth(300)
-        self.mumble_native_channels_btn = QPushButton("Channel-Liste laden")
+        cf.addWidget(QLabel("<b>Channels des verbundenen Mumble-Servers</b>"))
+
+        self.mumble_channel_tree = QTreeWidget()
+        self.mumble_channel_tree.setColumnCount(2)
+        self.mumble_channel_tree.setHeaderLabels(["Channel", "Nutzer"])
+        self.mumble_channel_tree.header().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        self.mumble_channel_tree.header().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.mumble_channel_tree.setAlternatingRowColors(True)
+        self.mumble_channel_tree.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self.mumble_channel_tree.itemDoubleClicked.connect(
+            lambda _item, _col: self._move_mumble_native_channel()
+        )
+        cf.addWidget(self.mumble_channel_tree)
+
+        channel_actions = QWidget()
+        ch = QHBoxLayout(channel_actions)
+        ch.setContentsMargins(0, 0, 0, 0)
+        self.mumble_native_channels_btn = QPushButton("Channel-Liste aktualisieren")
         self.mumble_native_channels_btn.clicked.connect(self._refresh_mumble_native_channels)
         self.mumble_native_move_btn = QPushButton("In gewählten Channel wechseln")
         self.mumble_native_move_btn.clicked.connect(self._move_mumble_native_channel)
-        cf.addWidget(QLabel("<b>Channels des verbundenen Mumble-Servers</b>"))
-        cf.addWidget(self.mumble_native_channel_select)
-        cf.addWidget(self.mumble_native_channels_btn)
-        cf.addWidget(self.mumble_native_move_btn)
+        ch.addWidget(self.mumble_native_channels_btn)
+        ch.addWidget(self.mumble_native_move_btn)
+        cf.addWidget(channel_actions)
+
         self.mumble_channel_hint = QLabel(
-            "Die Liste stammt direkt aus der nativen Gateway-Verbindung. "
-            "Der Desktop-Mumble-Client muss dafür nicht geöffnet sein."
+            "Die Nutzerzahl wird live aus der nativen Mumble-Verbindung ermittelt. "
+            "Der aktuelle Channel wird hervorgehoben. Doppelklick wechselt direkt."
         )
         self.mumble_channel_hint.setWordWrap(True)
         cf.addWidget(self.mumble_channel_hint)
-        cf.addStretch(1)
         self.mumble_tabs.addTab(mw, "Channels")
 
         # ---------------------------------------------------- Serverliste
@@ -775,11 +795,11 @@ class MainWindow(QMainWindow):
         pv.addWidget(self.mumble_native_speakers)
 
         self.mumble_participant_tabs = QTabWidget()
-        self.mumble_participants_channel = QTableWidget(0, 5)
-        self.mumble_participants_all = QTableWidget(0, 5)
+        self.mumble_participants_channel = QTableWidget(0, 4)
+        self.mumble_participants_all = QTableWidget(0, 4)
         for table in (self.mumble_participants_channel, self.mumble_participants_all):
             table.setHorizontalHeaderLabels(
-                ["Name", "Channel", "Mund", "Lokal", "Server"]
+                ["Name", "Channel", "Lokal", "Server"]
             )
             table.horizontalHeader().setSectionResizeMode(
                 0, QHeaderView.ResizeMode.ResizeToContents
@@ -793,9 +813,6 @@ class MainWindow(QMainWindow):
             table.horizontalHeader().setSectionResizeMode(
                 3, QHeaderView.ResizeMode.ResizeToContents
             )
-            table.horizontalHeader().setSectionResizeMode(
-                4, QHeaderView.ResizeMode.ResizeToContents
-            )
             table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
             table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
 
@@ -808,7 +825,7 @@ class MainWindow(QMainWindow):
         pv.addWidget(self.mumble_participant_tabs)
 
         self.mumble_participant_legend = QLabel(
-            "Mund: grün = schweigt · rot = spricht · blau = flüstert   |   "
+            "Mund links vom Namen: grün = schweigt · rot = spricht · blau = flüstert   |   "
             "Lokal: 🎙 stumm / 🎧 taub   |   Server: 🔒🎙 stumm / 🔒🎧 taub"
         )
         self.mumble_participant_legend.setWordWrap(True)
@@ -1240,17 +1257,64 @@ class MainWindow(QMainWindow):
             self.mumble_tabs.setCurrentIndex(0)
 
     def _refresh_mumble_native_channels(self):
-        paths = self.mumble_native.channel_paths()
-        self.mumble_native_channel_select.clear()
-        for cid, path in paths:
-            self.mumble_native_channel_select.addItem(path, cid)
-        if not paths:
+        if not hasattr(self, "mumble_channel_tree"):
+            return
+        channels = self.mumble_native.channel_snapshot()
+        self.mumble_channel_tree.clear()
+        if not channels:
             self.mumble_native_status_label.setText(
                 "Native Mumble: keine Channel-Liste verfügbar"
             )
+            return
+
+        by_id = {}
+        roots = []
+        for channel in channels:
+            users = int(channel.get("users") or 0)
+            label = str(channel.get("name") or "")
+            if channel.get("current"):
+                label = "▶ " + label
+            item = QTreeWidgetItem([label, str(users)])
+            item.setData(0, Qt.ItemDataRole.UserRole, channel)
+            if channel.get("current"):
+                font = item.font(0)
+                font.setBold(True)
+                item.setFont(0, font)
+                item.setToolTip(0, "Aktueller Channel")
+            by_id[int(channel["id"])] = item
+
+        for channel in channels:
+            item = by_id[int(channel["id"])]
+            parent_id = channel.get("parent")
+            if parent_id is not None and int(parent_id) in by_id and int(parent_id) != int(channel["id"]):
+                by_id[int(parent_id)].addChild(item)
+            else:
+                roots.append(item)
+
+        for item in roots:
+            self.mumble_channel_tree.addTopLevelItem(item)
+        self.mumble_channel_tree.expandAll()
+
+    def _selected_mumble_channel_path(self):
+        item = self.mumble_channel_tree.currentItem() if hasattr(self, "mumble_channel_tree") else None
+        if item is None:
+            return ""
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(data, dict):
+            return ""
+
+        names = [str(data.get("name") or "")]
+        parent = item.parent()
+        while parent is not None:
+            pdata = parent.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(pdata, dict):
+                names.append(str(pdata.get("name") or ""))
+            parent = parent.parent()
+        names.reverse()
+        return "/".join(name for name in names if name).strip("/")
 
     def _move_mumble_native_channel(self):
-        path = self.mumble_native_channel_select.currentText().strip()
+        path = self._selected_mumble_channel_path()
         if not path:
             path = self.mumble_channel.text().strip()
         if not path:
@@ -1258,6 +1322,7 @@ class MainWindow(QMainWindow):
         if self.mumble_native.move_to_path(path):
             self.mumble_channel.setText(path)
             self.ui_log.appendPlainText("Native Mumble: Channel-Wechsel → " + path)
+            QTimer.singleShot(400, self._refresh_mumble_native_channels)
         else:
             QMessageBox.warning(
                 self, "Native Mumble",
@@ -1350,25 +1415,23 @@ class MainWindow(QMainWindow):
         table.setRowCount(len(rows))
         for row, item in enumerate(rows):
             name_item = QTableWidgetItem(str(item.get("name") or ""))
-            channel_item = QTableWidgetItem(str(item.get("channel") or ""))
-
-            mouth_item = QTableWidgetItem("")
             if item.get("talking"):
                 mode = str(item.get("speech_mode") or "normal")
                 mouth_kind = "whisper" if mode == "whisper" else "talk"
             else:
                 mouth_kind = "idle"
-            mouth_item.setIcon(self._mumble_mouth_icon(mouth_kind))
-            mouth_item.setToolTip(
+            name_item.setIcon(self._mumble_mouth_icon(mouth_kind))
+            name_item.setToolTip(
                 "Flüstert" if mouth_kind == "whisper"
                 else ("Spricht" if mouth_kind == "talk" else "Spricht nicht")
             )
 
+            channel_item = QTableWidgetItem(str(item.get("channel") or ""))
             local_item = QTableWidgetItem(self._mumble_status_text(item, True))
             server_item = QTableWidgetItem(self._mumble_status_text(item, False))
 
             for col, cell in enumerate(
-                (name_item, channel_item, mouth_item, local_item, server_item)
+                (name_item, channel_item, local_item, server_item)
             ):
                 table.setItem(row, col, cell)
 
