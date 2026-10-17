@@ -1147,20 +1147,22 @@ class MainWindow(QMainWindow):
         if os.name != "nt":
             return False
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        for name in self._teamspeak_process_names():
-            try:
-                result = subprocess.run(
-                    ["tasklist", "/FI", f"IMAGENAME eq {name}", "/NH"],
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                    creationflags=creationflags,
-                )
-                if name.lower() in (result.stdout or "").lower():
-                    return True
-            except Exception:
-                pass
-        return False
+        script = (
+            "$p = Get-Process -Name ts3client_win64,ts3client_win32 "
+            "-ErrorAction SilentlyContinue; "
+            "if ($p) { exit 0 } else { exit 1 }"
+        )
+        try:
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                creationflags=creationflags,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
 
     def _close_teamspeak_normally(self, timeout=6.0):
         """Ask the TS3 main window to close and wait for the process to exit."""
@@ -1208,18 +1210,21 @@ class MainWindow(QMainWindow):
         if os.name != "nt":
             return True
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        for name in self._teamspeak_process_names():
-            try:
-                subprocess.run(
-                    ["taskkill", "/IM", name, "/T", "/F"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    creationflags=creationflags,
-                )
-            except Exception:
-                pass
-        deadline = time.monotonic() + 3.0
+        script = (
+            "Get-Process -Name ts3client_win64,ts3client_win32 "
+            "-ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue"
+        )
+        try:
+            subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=creationflags,
+            )
+        except Exception:
+            pass
+        deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:
             if not self._teamspeak_running():
                 return True
@@ -1250,8 +1255,8 @@ class MainWindow(QMainWindow):
         force = QMessageBox.question(
             self,
             "TeamSpeak läuft noch",
-            "TeamSpeak konnte nicht normal beendet werden.\n\n"
-            "Beenden erzwingen? Nicht gespeicherte TeamSpeak-Einstellungen könnten dabei verloren gehen.",
+            "TeamSpeak läuft nach dem normalen Schließen noch im Hintergrund weiter.\n\n"
+            "TeamSpeak-Prozess jetzt beenden, damit das Plugin aktualisiert werden kann?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
