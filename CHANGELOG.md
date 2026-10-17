@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.12 Portable Preview
+
+- behebt Updater-Fehler „Der Netzwerkpfad wurde nicht gefunden“
+- `cmd.exe start` erhält PowerShell-Argumente jetzt einzeln statt als vorquotierten Gesamtstring
+- verhindert falsche UNC-/Netzwerkpfad-Interpretation unter Windows
+- Update-Logs und 15-Sekunden-Timeout bleiben erhalten
+- RX-/TX-Resampling und GSM-WAV49 bleiben enthalten
+
 ## 0.1.11 Portable Preview
 
 - behebt stummen FRN-Empfang trotz sichtbarem RX-Pegel unter Windows
