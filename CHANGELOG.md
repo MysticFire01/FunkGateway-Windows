@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.10 Portable Preview
+
+- behebt Startabbruch `ImportError: cannot import name 'updates' from 'funkgateway'`
+- Updater-Modul wird explizit als `funkgateway.updates` importiert
+- PyInstaller erhält `--hidden-import funkgateway.updates`
+- GitHub Actions prüft den Updater-Import vor dem EXE-Build
+- Updater-Launch-Diagnose aus 0.1.9 bleibt enthalten
+- Mikrofon-Resampling und GSM-WAV49 bleiben enthalten
+
 ## 0.1.9 Portable Preview
 
 - Selbstupdater startet den externen Helfer über `cmd.exe start`
