@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.16 Portable Preview
+
+- behebt `WARN: play_thread läuft nach 2 s noch` nach FRN-`BLOCK` oder Loginfehler
+- jeder Abbruch des FRN-Netzwerkthreads setzt jetzt auch das Audio-Stop-Signal
+- RX/TX-Audio-Threads werden auch bei Serverfehlern sauber beendet
+- race-freier Raumwechsel bleibt erhalten
+- Onedir/Standalone-Build aus 0.1.15 bleibt erhalten
+
 ## 0.1.15 Portable Preview
 
 - Windows-Build von PyInstaller Onefile auf Onedir/Standalone umgestellt
