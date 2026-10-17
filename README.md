@@ -495,3 +495,10 @@ official azlux/pymumble 1.6.1 tag during GitHub Actions. This avoids a Windows /
 Python 3.12 packaging problem where the PyPI distribution was installed but the
 expected top-level `pymumble_py3` module was not importable in the build job.
 The import is validated before PyInstaller runs.
+
+
+## pymumble upstream pin 0.2.29
+
+The Windows build now uses the upstream `pymumble_py3` branch at pinned commit
+`8755c7d41b8f1f91402a6218c413121b64bdce33`. The previously assumed Git tag `1.6.1` does not exist in the
+upstream repository. Pinning the commit keeps the build reproducible.
