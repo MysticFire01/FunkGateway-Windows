@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.22 Portable Preview**
+**0.2.0 Windows UI Foundation**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.22\
+FunkGateway-Windows-0.2.0\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -215,3 +215,13 @@ After a successful login FunkGateway also sends `ST:0` after `RX0`.
 From 0.1.22 PC-only clients (CL=2) send `CT=- -` only when the city field is
 empty. If a city is entered, FunkGateway sends exactly that city text without
 appending ` - -`.
+
+
+## Windows 0.2 UI foundation
+
+The Windows port now follows the Linux FunkGateway navigation model: a persistent
+operating-mode/control row and live status bar remain visible above the main tabs.
+FRN is integrated under Integrationen together with prepared TeamSpeak and Mumble
+pages. Linux theme support is shared with the Windows port. TeamSpeak/Mumble
+backends and Windows radio/audio hardware routing are the next implementation
+steps.
