@@ -143,7 +143,11 @@ class FrnPanel(QWidget):
         manual=QHBoxLayout(); manual.addWidget(QLabel('Raum manuell:')); self.manual_room=QLineEdit(); self.manual_room.setPlaceholderText('Raumnamen eingeben oder aus der Liste wählen …'); self.manual_room.setClearButtonEnabled(True); self.manual_room.returnPressed.connect(self.join_selected_room); manual.addWidget(self.manual_room,1); vv.addLayout(manual)
         rr=QHBoxLayout(); self.room_source=QComboBox(); self.room_source.addItem('SystemManager','systemmanager'); self.room_source.addItem('Direkt vom Server (NET_NAMES)','server'); self.room_source.addItem('Zusammengeführt','combined'); self.room_source.setCurrentIndex(2); self.room_source.currentIndexChanged.connect(self.populate_rooms); refresh=QPushButton('Raumliste aktualisieren'); refresh.clicked.connect(self.populate_rooms); sw=QPushButton('Raum beitreten / wechseln'); sw.clicked.connect(self.join_selected_room); rr.addWidget(self.room_source); rr.addWidget(refresh); rr.addWidget(sw); vv.addLayout(rr); tabs.addTab(w,'Server & Räume')
         # participants
-        w=QWidget(); vv=QVBoxLayout(w); self.talker=QLabel('FRN RX: –'); self.talker.setStyleSheet('font-size:16px;font-weight:700;padding:6px;'); vv.addWidget(self.talker); self.participants=QTableWidget(0,6); self.participants.setHorizontalHeaderLabels(['','Name','Typ','Band','Land','Ort']); self.participants.horizontalHeader().setSectionResizeMode(1,QHeaderView.Stretch); self.participants.setEditTriggers(QAbstractItemView.NoEditTriggers); vv.addWidget(self.participants); tabs.addTab(w,'Teilnehmer')
+        w=QWidget(); vv=QVBoxLayout(w); self.talker=QLabel('FRN RX: –'); self.talker.setStyleSheet('font-size:16px;font-weight:700;padding:6px;'); vv.addWidget(self.talker)
+        self.frn_self_mute=QPushButton('🎙 Mikro stumm'); self.frn_self_mute.setCheckable(True); self.frn_self_mute.toggled.connect(self._frn_self_mute_changed)
+        self.frn_self_deaf=QPushButton('🎧 Ton aus / Deaf'); self.frn_self_deaf.setCheckable(True); self.frn_self_deaf.toggled.connect(self._frn_self_deaf_changed)
+        selfrow=QHBoxLayout(); selfrow.addWidget(self.frn_self_mute); selfrow.addWidget(self.frn_self_deaf); selfrow.addStretch(1); vv.addLayout(selfrow)
+        self.participants=QTableWidget(0,6); self.participants.setHorizontalHeaderLabels(['','Name','Typ','Band','Land','Ort']); self.participants.horizontalHeader().setSectionResizeMode(1,QHeaderView.Stretch); self.participants.setEditTriggers(QAbstractItemView.NoEditTriggers); vv.addWidget(self.participants); tabs.addTab(w,'Teilnehmer')
         # audio/PTT
         w=QWidget(); f=QFormLayout(w); self.rx_meter=QProgressBar(); self.tx_meter=QProgressBar(); self.rx_meter.setRange(0,60); self.tx_meter.setRange(0,60); self.rx_label=QLabel('RX: < -60 dBFS'); self.tx_label=QLabel('TX: < -60 dBFS'); f.addRow('FRN Empfang:',self.rx_meter); f.addRow('',self.rx_label); f.addRow('FRN Senden:',self.tx_meter); f.addRow('',self.tx_label)
         self.ptt_mode=QComboBox(); self.ptt_mode.addItem('Halten zum Senden','hold'); self.ptt_mode.addItem('Klick zum Verriegeln','latch')
@@ -218,11 +222,27 @@ class FrnPanel(QWidget):
         pulse_input='funkgateway_rx_source' if radio_auto else None
         return FrnConfig(self.manager.currentData(),self.server.text().strip(),self.port.value(),self.email.text().strip(),self.password.text(),self.callsign.text().strip(),vx,client_type,band_channel,self.description.text().strip(),self.country.text().strip(),city_part,self.room.text().strip(),self.audio_in.currentData(),self.audio_out.currentData(),self.audio_enabled.isChecked(),pulse_input,self.main_password_fallback.isChecked())
 
+    def _frn_self_mute_changed(self, enabled):
+        enabled=bool(enabled)
+        if enabled:
+            self.ptt(False,force=True)
+        if self.client:
+            self.client.set_local_mute(enabled)
+        self.frn_self_mute.setText('🎙 Mikro STUMM' if enabled else '🎙 Mikro stumm')
+        self.frn_self_mute.setStyleSheet('background:#E53935;color:white;font-weight:bold;' if enabled else '')
+
+    def _frn_self_deaf_changed(self, enabled):
+        enabled=bool(enabled)
+        if self.client:
+            self.client.set_local_deaf(enabled)
+        self.frn_self_deaf.setText('🎧 TON AUS / DEAF' if enabled else '🎧 Ton aus / Deaf')
+        self.frn_self_deaf.setStyleSheet('background:#2F80ED;color:white;font-weight:bold;' if enabled else '')
+
     def connect_frn(self):
         try: cfg=self._cfg()
         except Exception as e: QMessageBox.warning(self,'FRN',str(e)); return
         if self.client:self.client.stop()
-        self.client=FrnNativeClient(cfg); s=self.client.signals; s.log.connect(self._log); s.state.connect(lambda _:self._update_status()); s.connected.connect(self._connected); s.participant_list.connect(self.update_participants); s.server_room_list.connect(self._direct_rooms); s.rx_talker.connect(self.update_talker); s.audio_level.connect(self._tx_level); s.rx_audio_level.connect(self._rx_level); s.tx_granted.connect(self._tx_granted); s.error.connect(lambda e:self._log('FEHLER: '+e)); self.connect_btn.setEnabled(False); self.client.start()
+        self.client=FrnNativeClient(cfg); self.client.set_local_mute(self.frn_self_mute.isChecked()); self.client.set_local_deaf(self.frn_self_deaf.isChecked()); s=self.client.signals; s.log.connect(self._log); s.state.connect(lambda _:self._update_status()); s.connected.connect(self._connected); s.participant_list.connect(self.update_participants); s.server_room_list.connect(self._direct_rooms); s.rx_talker.connect(self.update_talker); s.audio_level.connect(self._tx_level); s.rx_audio_level.connect(self._rx_level); s.tx_granted.connect(self._tx_granted); s.error.connect(lambda e:self._log('FEHLER: '+e)); self.connect_btn.setEnabled(False); self.client.start()
     def disconnect_frn(self, room_switch=False):
         self.ptt(False,force=True)
         if not room_switch:
