@@ -604,3 +604,12 @@ Native Mumble receive audio is now audible by default in PC-user mode. The old
 monitoring. It is replaced by a clear "Mumble-Empfang stummschalten" control.
 Unchecked means normal Mumble behavior: incoming users are immediately played
 through the selected speakers/headphones.
+
+
+## Mumble users in channel tree 0.2.39
+
+The Mumble channel tree now mirrors the normal Mumble client more closely:
+users appear directly below their current channel with the live mouth icon next
+to their name. User counts update live without rebuilding the channel hierarchy,
+so expanded/collapsed branches stay stable. Double-clicking a channel joins it;
+double-clicking a user does not trigger a channel change.
