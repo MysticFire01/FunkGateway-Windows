@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.52 – Mumble-Statusleiste und sauberes Disconnect
+
+- obere Live-Statusleiste zeigt FRN und Mumble getrennt als verbunden/getrennt
+- bei aktiver Mumble-Verbindung wird der aktuelle Mumble-Channel angezeigt
+- aktive Mumble-Sprecher erscheinen zusätzlich direkt in der Live-Statusleiste
+- bei mehreren Sprechern werden bis zu drei Namen kompakt angezeigt
+- PC-User-Status unterscheidet FRN TX und Mumble TX
+- beim Mumble-Disconnect werden sofort geleert:
+  - Channelbaum
+  - Teilnehmerliste aktueller Channel
+  - Teilnehmerliste gesamter Server
+  - aktive Sprecher
+  - aktueller Channel
+  - RX/TX-Pegel
+  - RX-Status
+- Mumble-PTT in der oberen Leiste wird beim Disconnect ausgeblendet und zurückgesetzt
+- Statusfeld auf der Startseite springt zuverlässig auf „Mumble: getrennt“
+
 ## 0.2.51 – Mumble-Rechtsklickaktionen und Publist-Abgleich
 
 - Benutzeraktionen jetzt sowohl im Channelbaum als auch im Teilnehmer-Tab per Rechtsklick
