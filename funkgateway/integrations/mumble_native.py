@@ -54,8 +54,10 @@ class MumbleNativeGateway(QObject):
     connectedChanged = Signal(bool)
     channelChanged = Signal(str)
     speakersChanged = Signal(object)
+    participantsChanged = Signal(object)
     radioRxActivity = Signal(bool)
     radioRxLevel = Signal(float)
+    networkRxLevel = Signal(float)
     error = Signal(str)
 
     def __init__(self, tx_engine=None, parent=None):
@@ -189,6 +191,7 @@ class MumbleNativeGateway(QObject):
 
             while not self._stop.is_set():
                 self._emit_speakers()
+                self._emit_participants()
                 try:
                     ch = mumble.my_channel()
                     name = str(self._prop(ch, "name", "") or "")
@@ -322,9 +325,63 @@ class MumbleNativeGateway(QObject):
         try:
             pcm = bytes(soundchunk.pcm)
             if pcm:
+                self.networkRxLevel.emit(self._dbfs(pcm))
                 self.tx_engine.push_pcm(pcm, 48000, 1, "Mumble: " + name)
         except Exception as exc:
             self.error.emit("Mumble → Funk: " + str(exc))
+
+    def _channel_path_by_id(self, cid):
+        try:
+            cid = int(cid)
+        except Exception:
+            return ""
+        for known_cid, path in self.channel_paths():
+            if int(known_cid) == cid:
+                return path
+        return ""
+
+    def participants(self):
+        mumble = self._mumble
+        if mumble is None or not self._connected:
+            return []
+        users = getattr(mumble, "users", {})
+        try:
+            items = list(users.items())
+        except Exception:
+            return []
+
+        now = time.monotonic()
+        with self._speaker_lock:
+            active = {
+                name for name, ts in self._speaker_times.items()
+                if now - ts <= 0.8
+            }
+
+        result = []
+        for _session, user in items:
+            name = str(self._prop(user, "name", "") or "")
+            if not name:
+                continue
+            channel_id = self._prop(user, "channel_id", None)
+            if channel_id is None:
+                channel_id = self._prop(user, "channel", None)
+            channel_path = self._channel_path_by_id(channel_id)
+            muted = bool(self._prop(user, "mute", False) or self._prop(user, "self_mute", False))
+            deaf = bool(self._prop(user, "deaf", False) or self._prop(user, "self_deaf", False))
+            result.append({
+                "name": name,
+                "channel": channel_path,
+                "talking": name in active,
+                "muted": muted,
+                "deaf": deaf,
+            })
+        return sorted(result, key=lambda item: (item["channel"].lower(), item["name"].lower()))
+
+    def _emit_participants(self):
+        try:
+            self.participantsChanged.emit(self.participants())
+        except Exception:
+            pass
 
     def _emit_speakers(self):
         now = time.monotonic()
@@ -334,6 +391,8 @@ class MumbleNativeGateway(QObject):
                 self._speaker_times.pop(name, None)
             names = sorted(self._speaker_times)
         self.speakersChanged.emit(names)
+        if not names:
+            self.networkRxLevel.emit(-120.0)
 
     @staticmethod
     def _dbfs(raw):
