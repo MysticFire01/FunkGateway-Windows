@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.20 Portable Preview
+
+- behebt `AL=BLOCK` auf Servern, die das FRN-`CT`-Feld validieren
+- PC only (`CL=2`) sendet `CT` automatisch als `Stadt - -`
+- bei leerer Stadt wird protokollgerecht `CT= - -` gesendet
+- bestehendes `- -` wird nicht doppelt ergänzt
+- nach erfolgreichem Login wird zusätzlich zu `RX0` auch `ST:0` gesendet
+- CL/BC-Kopplung, Audio-, Raumwechsel-, Updater- und Onedir-Fixes bleiben erhalten
+
 ## 0.1.19 Portable Preview
 
 - FRN-Feld `BC` wird jetzt passend zur Clientklasse erzeugt
