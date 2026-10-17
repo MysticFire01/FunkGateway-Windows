@@ -439,6 +439,7 @@ class FrnNativeClient:
         self.sock_lock = threading.Lock()
         self.thread = None
         self.buf = bytearray()
+        self._pending_crlf_lf = False
         self.state = "DISCONNECTED"
 
         self.list_kind = None
@@ -822,8 +823,21 @@ class FrnNativeClient:
                 continue
             if not chunk:
                 raise ConnectionError("FRN-Server hat die Verbindung beendet.")
-            self.buf.extend(chunk)
+            self._append_received(chunk)
         raise TimeoutError("Zeitüberschreitung bei FRN-Anmeldung.")
+
+    def _append_received(self, chunk):
+        """Keep CRLF together even when TCP splits CR and LF across reads.
+
+        FRN mixes binary datatype bytes and line-oriented list payloads.
+        A dangling LF must not become a bogus datatype (0x0a).
+        """
+        if self._pending_crlf_lf:
+            self._pending_crlf_lf = False
+            if chunk[:1] == b"\x0a":
+                chunk = chunk[1:]
+        if chunk:
+            self.buf.extend(chunk)
 
     def _line_end(self):
         for i, b in enumerate(self.buf):
@@ -834,8 +848,11 @@ class FrnNativeClient:
     def _pop_line(self, idx):
         raw = bytes(self.buf[:idx])
         consume = idx + 1
-        if self.buf[idx] == 13 and consume < len(self.buf) and self.buf[consume] == 10:
-            consume += 1
+        if self.buf[idx] == 13:
+            if consume < len(self.buf) and self.buf[consume] == 10:
+                consume += 1
+            elif consume == len(self.buf):
+                self._pending_crlf_lf = True
         del self.buf[:consume]
         return decode_frn(raw, "cp1252")
 
@@ -884,9 +901,16 @@ class FrnNativeClient:
             line = self._pop_line(idx)
             progressed = True
             if self.list_remaining is None:
-                self.list_remaining = parse_int(
-                    line, 0, MAX_CLIENTS_PER_NET, "FRN-Listenlänge"
-                )
+                try:
+                    self.list_remaining = parse_int(
+                        line, 0, MAX_CLIENTS_PER_NET, "FRN-Listenlänge"
+                    )
+                except RuntimeError as exc:
+                    raise RuntimeError(
+                        f"{exc} (Liste={self.list_kind}, Server={self.cfg.server}:"
+                        f"{self.cfg.port}, danach gepufferte Bytes="
+                        f"{bytes(self.buf[:12]).hex(' ')})"
+                    ) from exc
                 if self.list_remaining == 0:
                     self._finish_list()
                     return True
@@ -1003,7 +1027,11 @@ class FrnNativeClient:
                 self._begin_list(names.get(cmd, f"LIST_{cmd}"))
                 self._set_state("RX_LIST")
             else:
-                self.signals.log.emit(f"WARN: Unbekanntes FRN-Datentyp-Byte {cmd}")
+                self.signals.log.emit(
+                    f"WARN: Unbekanntes FRN-Datentyp-Byte {cmd} (0x{cmd:02x}); "
+                    f"Status={self.state}, Server={self.cfg.server}:{self.cfg.port}, "
+                    f"nächste Bytes={bytes(self.buf[:12]).hex(' ')}"
+                )
                 self._set_state("IDLE")
 
     def _run(self):
@@ -1104,7 +1132,7 @@ class FrnNativeClient:
                     data = self.sock.recv(65536)
                     if not data:
                         raise ConnectionError("FRN-Server hat getrennt.")
-                    self.buf.extend(data)
+                    self._append_received(data)
                     self._parse()
                     next_ping = time.monotonic() + 2.0
                 except socket.timeout:
