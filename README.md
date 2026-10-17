@@ -426,3 +426,10 @@ synchronization resumes.
 
 The gateway PTT serial-port field remains an editable dropdown populated from
 the serial ports detected by Windows.
+
+
+## Serial port dropdown 0.2.23
+
+The gateway PTT port selector is now a real non-editable combo box populated
+with detected Windows serial ports. A separate “Manuell …” entry opens a text
+dialog for unusual/custom port names.
