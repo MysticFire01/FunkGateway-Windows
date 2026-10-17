@@ -362,3 +362,11 @@ TeamSpeak 3 is running. It asks for permission to close TeamSpeak, first tries a
 normal window close and waits for the process to exit. Only if that fails does
 it offer a separate forced-close confirmation. The installer is not launched
 while TeamSpeak remains active.
+
+
+## Reliable TeamSpeak process shutdown 0.2.17
+
+TeamSpeak process detection now uses PowerShell Get-Process instead of parsing
+localized tasklist output. If TeamSpeak remains alive in the tray/background
+after a normal window close, FunkGateway can terminate that remaining process
+after explicit confirmation and only then launch the plugin installer.
