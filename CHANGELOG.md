@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.45 – Zertifikats-Selbsttest im Windows-Build korrigiert
+
+- der fertige EXE-Selbsttest lieferte bereits erfolgreich `ok: true`
+- GitHub Actions wertete bei der windowed EXE jedoch `$LASTEXITCODE` falsch/alt aus
+- Validierung verwendet jetzt `Start-Process -Wait -PassThru`
+- dadurch wird der echte Prozess-Exitcode geprüft
+- Zertifikatsbackend im fertigen Paket bleibt weiterhin zwingend getestet
+
 ## 0.2.44 – Zertifikatsmodul auf PyInstaller-stabile cryptography-Version gepinnt
 
 - cryptography auf 43.0.3 fest gepinnt
