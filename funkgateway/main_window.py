@@ -2296,10 +2296,17 @@ class MainWindow(QMainWindow):
         if attempts <= 15:
             QTimer.singleShot(1000, self._retry_mumble_channels)
         else:
-            self.mumble_native_status_label.setText(
-                "Native Mumble: keine Channel-Daten empfangen. "
-                "Bitte Verbindung oder Logs prüfen."
+            diag = self.mumble_native.snapshot_diagnostics()
+            description = (
+                f"Channel-Daten fehlen: Serverstatus={diag['protocol_state']}, "
+                f"Räume={diag['channels']}, Benutzer={diag['users']}, "
+                f"eigene Session={diag['own_session']}, "
+                f"Thread aktiv={diag['thread_alive']}."
             )
+            self.mumble_native_status_label.setText("Native Mumble: " + description)
+            self.ui_log.appendPlainText("Mumble Diagnose: " + description)
+            if diag["channels"] > 0:
+                self._refresh_mumble_native_channels()
 
     def _refresh_mumble_native_channels(self):
         if not hasattr(self, "mumble_channel_tree"):
