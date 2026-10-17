@@ -119,6 +119,74 @@ class RadioRxDetector(QObject):
                 self.activity.emit(False)
 
 
+class RadioAudioBridge(QObject):
+    """Continuously forward one radio input to one VoIP/virtual output.
+
+    Designed for Windows virtual audio cables (VB-CABLE/VoiceMeeter etc.) and
+    also usable on Linux with ordinary PortAudio devices. Input/output native
+    sample rates may differ; audioop.ratecv performs lightweight mono resampling.
+    """
+
+    error = Signal(str)
+    state = Signal(bool)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._thread = None
+        self._stop = threading.Event()
+
+    @property
+    def running(self):
+        return bool(self._thread and self._thread.is_alive())
+
+    def start(self, input_device, output_device):
+        self.stop()
+        if sd is None:
+            raise RuntimeError("sounddevice / PortAudio ist nicht verfügbar.")
+        if input_device is None or output_device is None:
+            raise RuntimeError("Funk-RX Eingang und TeamSpeak-Audioausgang müssen gewählt sein.")
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._run, args=(input_device, output_device), daemon=True
+        )
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        t = self._thread
+        if t and t.is_alive() and t is not threading.current_thread():
+            t.join(timeout=1.5)
+        self._thread = None
+
+    def _run(self, input_device, output_device):
+        try:
+            in_info = sd.query_devices(input_device, "input")
+            out_info = sd.query_devices(output_device, "output")
+            in_rate = int(round(float(in_info.get("default_samplerate") or 48000)))
+            out_rate = int(round(float(out_info.get("default_samplerate") or 48000)))
+            in_block = max(160, int(in_rate * 0.02))
+            state = None
+
+            with sd.RawInputStream(
+                samplerate=in_rate, blocksize=in_block, channels=1,
+                dtype="int16", device=input_device, latency="low"
+            ) as inp, sd.RawOutputStream(
+                samplerate=out_rate, blocksize=0, channels=1,
+                dtype="int16", device=output_device, latency="low"
+            ) as out:
+                self.state.emit(True)
+                while not self._stop.is_set():
+                    data, overflowed = inp.read(in_block)
+                    raw = bytes(data)
+                    if in_rate != out_rate:
+                        raw, state = audioop.ratecv(raw, 2, 1, in_rate, out_rate, state)
+                    out.write(raw)
+        except Exception as exc:
+            self.error.emit(str(exc))
+        finally:
+            self.state.emit(False)
+
+
 def input_devices():
     if sd is None:
         return []
@@ -127,6 +195,19 @@ def input_devices():
         for index, info in enumerate(sd.query_devices()):
             if int(info.get("max_input_channels") or 0) > 0:
                 result.append((index, str(info.get("name") or f"Input {index}")))
+    except Exception:
+        pass
+    return result
+
+
+def output_devices():
+    if sd is None:
+        return []
+    result = []
+    try:
+        for index, info in enumerate(sd.query_devices()):
+            if int(info.get("max_output_channels") or 0) > 0:
+                result.append((index, str(info.get("name") or f"Output {index}")))
     except Exception:
         pass
     return result
