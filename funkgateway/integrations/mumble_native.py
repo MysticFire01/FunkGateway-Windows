@@ -105,6 +105,7 @@ class MumbleNativeGateway(QObject):
         self._capture_enabled = False
         self._pc_ptt_enabled = False
         self._pc_ptt_active = False
+        self._own_tx_active = False
         self._certfile = ""
         self._keyfile = ""
 
@@ -272,6 +273,7 @@ class MumbleNativeGateway(QObject):
     def disconnect(self):
         self._stop.set()
         self._pc_ptt_active = False
+        self._own_tx_active = False
         self._stop_capture()
         self._stop_playback()
         mumble = self._mumble
@@ -314,6 +316,8 @@ class MumbleNativeGateway(QObject):
     def set_pc_ptt(self, active):
         active = bool(active) and self._pc_ptt_enabled and self._connected
         self._pc_ptt_active = active
+        if self._pc_ptt_enabled:
+            self._own_tx_active = active
         if active and not (self._capture_thread and self._capture_thread.is_alive()):
             self._start_capture()
         if not active and not self._capture_enabled and not self._pc_ptt_enabled:
@@ -603,11 +607,16 @@ class MumbleNativeGateway(QObject):
             server_deaf = bool(self._prop(user, "deaf", False))
             local_mute = bool(self._prop(user, "self_mute", False))
             local_deaf = bool(self._prop(user, "self_deaf", False))
+            is_self = (
+                myself_session is not None
+                and int(self._prop(user, "session", _session)) == myself_session
+            )
+            own_talking = bool(is_self and self._own_tx_active)
             result.append({
                 "name": name,
                 "channel": channel_path,
-                "talking": name in active,
-                "speech_mode": active.get(name, ""),
+                "talking": own_talking or name in active,
+                "speech_mode": ("normal" if own_talking else active.get(name, "")),
                 "server_mute": server_mute,
                 "server_deaf": server_deaf,
                 "local_mute": local_mute,
@@ -617,10 +626,7 @@ class MumbleNativeGateway(QObject):
                     and channel_id is not None
                     and int(channel_id) == int(current_channel_id)
                 ),
-                "is_self": (
-                    myself_session is not None
-                    and int(self._prop(user, "session", _session)) == myself_session
-                ),
+                "is_self": is_self,
             })
         return sorted(result, key=lambda item: (item["channel"].lower(), item["name"].lower()))
 
@@ -716,6 +722,7 @@ class MumbleNativeGateway(QObject):
                     if pc_send:
                         if not active:
                             active = True
+                            self._own_tx_active = True
                             self.radioRxActivity.emit(True)
                             send_blocks.extend(preroll)
                             preroll.clear()
@@ -740,6 +747,7 @@ class MumbleNativeGateway(QObject):
                                 self.radioRxActivity.emit(False)
                         else:
                             active = False
+                            self._own_tx_active = False
                             self.radioRxActivity.emit(False)
 
                     for part in send_blocks:
@@ -753,4 +761,5 @@ class MumbleNativeGateway(QObject):
         except Exception as exc:
             self.error.emit("Mumble Funk-RX: " + str(exc))
         finally:
+            self._own_tx_active = False
             self.radioRxActivity.emit(False)
