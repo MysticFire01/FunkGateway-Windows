@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.49 – Offizielle Mumble-Serverliste über QtNetwork
+
+- behebt den Fallback-Grund:
+  - HTTP 501 „First fragment: Transfer-Encoding not supported“
+- offizielle Mumble-Serverliste wird nicht mehr über Python urllib geladen
+- stattdessen wird PySide6.QtNetwork verwendet – derselbe Netzwerk-Stack wie im Mumble-Desktop-Client
+- keine neue Bibliothek nötig; Qt/PySide6 ist bereits Bestandteil von FunkGateway
+- Anfrage verwendet aktuellen stabilen Mumble-Release-String 1.5.915
+- Legacy-Fallback bleibt nur als Notlösung bestehen
+- Oberfläche zeigt weiterhin klar an, ob die offizielle Liste oder der 50er-Fallback aktiv ist
+- Build validiert explizit den Import von PySide6.QtNetwork
+
 ## 0.2.48 – Offizielle Mumble-Serverliste unter Windows robuster laden
 
 - offizieller Abruf von publist.mumble.info verwendet jetzt explizit den mitgelieferten certifi-CA-Store
