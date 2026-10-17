@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.1 – Dark-Table-Fix und Gateway-PTT-Grundfunktion
+
+- weiße Fokus-/Rahmenflächen der FRN-Tabellen im Dark Theme entfernt
+- Tabellenkopf, Auswahl und Tabellenhintergrund folgen jetzt vollständig dem FunkGateway-Theme
+- neue plattformübergreifende PTT-Abstraktion
+- Test-PTT ohne Hardware
+- serielle PTT über RTS oder DTR via pyserial
+- Windows COM-Ports und Linux /dev/tty*-Ports verwenden dieselbe PTT-Schnittstelle
+- Gateway starten initialisiert den PTT-Ausgang
+- oberer PTT-Knopf schaltet im Gateway-/Funk-Papagei-Modus die Hardware-PTT
+- NOT-AUS löst FRN- und Gateway-PTT sofort
+- PTT-Konfiguration wird portabel gespeichert
+- Gateway-Audio-Routing folgt in einem separaten Schritt
+
 ## 0.2.0 Windows UI Foundation
 
 - Hauptoberfläche an den Linux-Aufbau angeglichen
