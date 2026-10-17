@@ -12,7 +12,7 @@ from PySide6.QtCore import QObject, Signal
 
 
 # Official public list used by the Mumble desktop client.
-OFFICIAL_PUBLIC_LIST_URL = "https://publist.mumble.info/v1/list?version=1.5.0"
+OFFICIAL_PUBLIC_LIST_URL = "https://publist.mumble.info/v1/list?version=1.5.939"
 
 # Fallback only. This endpoint currently returns a much smaller result set.
 LEGACY_PUBLIC_LIST_URL = "https://www.mumble.com/serverlist/ajax/list-servers.php"
