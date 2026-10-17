@@ -28,7 +28,8 @@ from .integrations.mumble_native import MumbleNativeGateway
 from .integrations.mumble_public import MumblePublicServerLoader
 from .mumble_certificates import (
     list_certificates, create_certificate, import_pkcs12, import_pem,
-    delete_certificate, certificate_backend_status,
+    delete_certificate, certificate_backend_status, export_pem,
+    export_pkcs12, CERT_DIR,
 )
 from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_devices
 from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge, PLUGIN_VERSION as TS_PLUGIN_VERSION
@@ -1006,6 +1007,8 @@ class MainWindow(QMainWindow):
         self.mumble_cert_create_btn = QPushButton("Neues Zertifikat erstellen")
         self.mumble_cert_import_p12_btn = QPushButton("P12 / PFX importieren")
         self.mumble_cert_import_pem_btn = QPushButton("PEM Zertifikat + Schlüssel importieren")
+        self.mumble_cert_export_p12_btn = QPushButton("P12 / PFX exportieren")
+        self.mumble_cert_export_pem_btn = QPushButton("PEM Zertifikat + Schlüssel exportieren")
         self.mumble_cert_delete_btn = QPushButton("Ausgewähltes Zertifikat löschen")
         self.mumble_register_btn = QPushButton("Aktuellen Mumble-Benutzer registrieren")
         self.mumble_cert_info = QLabel("Kein Zertifikat ausgewählt")
@@ -1018,6 +1021,8 @@ class MainWindow(QMainWindow):
         self.mumble_cert_create_btn.clicked.connect(self._create_mumble_certificate)
         self.mumble_cert_import_p12_btn.clicked.connect(self._import_mumble_p12)
         self.mumble_cert_import_pem_btn.clicked.connect(self._import_mumble_pem)
+        self.mumble_cert_export_p12_btn.clicked.connect(self._export_mumble_p12)
+        self.mumble_cert_export_pem_btn.clicked.connect(self._export_mumble_pem)
         self.mumble_cert_delete_btn.clicked.connect(self._delete_mumble_certificate)
         self.mumble_register_btn.clicked.connect(self._register_mumble_user)
         self.mumble_cert_select.currentIndexChanged.connect(self._mumble_certificate_changed)
@@ -1035,6 +1040,8 @@ class MainWindow(QMainWindow):
         cv.addWidget(row)
         cv.addWidget(self.mumble_cert_import_p12_btn)
         cv.addWidget(self.mumble_cert_import_pem_btn)
+        cv.addWidget(self.mumble_cert_export_p12_btn)
+        cv.addWidget(self.mumble_cert_export_pem_btn)
         cv.addWidget(self.mumble_cert_delete_btn)
         cv.addWidget(self.mumble_register_btn)
 
@@ -2140,6 +2147,80 @@ class MainWindow(QMainWindow):
         try:
             import_pem(cert, key)
             self._refresh_mumble_certificates()
+        except Exception as exc:
+            QMessageBox.warning(self, "Mumble Zertifikat", str(exc))
+
+    def _choose_mumble_certificate_export_folder(self):
+        CERT_DIR.mkdir(parents=True, exist_ok=True)
+        return QFileDialog.getExistingDirectory(
+            self,
+            "Ordner für Mumble-Zertifikatsexport wählen",
+            str(CERT_DIR),
+            QFileDialog.Option.ShowDirsOnly,
+        )
+
+    def _export_mumble_pem(self):
+        info = self._selected_mumble_certificate()
+        if not info:
+            QMessageBox.warning(
+                self, "Mumble Zertifikat",
+                "Bitte zuerst ein Zertifikat auswählen."
+            )
+            return
+        folder = self._choose_mumble_certificate_export_folder()
+        if not folder:
+            return
+        try:
+            result = export_pem(str(info.get("id") or ""), folder)
+            copied = list(result.get("copied") or [])
+            if copied:
+                message = (
+                    "PEM-Zertifikat und privater Schlüssel wurden exportiert:\n\n"
+                    + "\n".join(copied)
+                )
+            else:
+                message = (
+                    "Das Zertifikat und der private Schlüssel liegen bereits "
+                    "im gewählten Ordner:\n\n"
+                    + str(result.get("cert_path") or "")
+                    + "\n"
+                    + str(result.get("key_path") or "")
+                )
+            QMessageBox.information(self, "Mumble Zertifikat exportiert", message)
+        except Exception as exc:
+            QMessageBox.warning(self, "Mumble Zertifikat", str(exc))
+
+    def _export_mumble_p12(self):
+        info = self._selected_mumble_certificate()
+        if not info:
+            QMessageBox.warning(
+                self, "Mumble Zertifikat",
+                "Bitte zuerst ein Zertifikat auswählen."
+            )
+            return
+        folder = self._choose_mumble_certificate_export_folder()
+        if not folder:
+            return
+
+        password, ok = QInputDialog.getText(
+            self,
+            "P12/PFX Export",
+            "Passwort für die Exportdatei (leer = ohne Passwort):",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        try:
+            path = export_pkcs12(
+                str(info.get("id") or ""),
+                folder,
+                password or None,
+            )
+            QMessageBox.information(
+                self,
+                "Mumble Zertifikat exportiert",
+                "P12/PFX-Datei wurde exportiert:\n\n" + str(path),
+            )
         except Exception as exc:
             QMessageBox.warning(self, "Mumble Zertifikat", str(exc))
 
