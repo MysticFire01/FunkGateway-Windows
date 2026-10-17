@@ -703,3 +703,11 @@ HTTP 501 / Transfer-Encoding errors on the urllib path.
 No extra GUI or networking dependency is added; QtNetwork is already part of
 the bundled PySide6 runtime. The legacy 50-entry source remains only as a
 fallback and is clearly identified in the UI.
+
+
+## Local Mumble user mute 0.2.53
+
+Per-user local mute now filters the actual incoming PCM stream. A locally muted
+participant remains visible and may still show a speaking mouth icon, but their
+audio is no longer played locally and is not forwarded into the Mumble-to-radio
+TX path.
