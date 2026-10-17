@@ -17,6 +17,7 @@ from .hotkeys import LocalPttHotkey, ModifierHoldWatcher
 from .integrations.frn_panel import FrnPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
 from .ptt import DryPTT, SerialPTT, serial_ports
+from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
 
 
 class UpdateWorker(QObject):
@@ -60,6 +61,11 @@ class MainWindow(QMainWindow):
         self.gateway_ptt = None
         self.gateway_started = False
 
+        self.ts_client = TeamSpeakClientQuery()
+        self.ts_last_status = None
+        self.ts_last_speakers = []
+        self.ts_last_channel = None
+
         self._build_update_menu()
         self._build_shell()
         self._build_hotkeys()
@@ -68,6 +74,11 @@ class MainWindow(QMainWindow):
         self.ptt_guard.setInterval(200)
         self.ptt_guard.timeout.connect(self._ptt_guard_tick)
         self.ptt_guard.start()
+
+        self.integration_timer = QTimer(self)
+        self.integration_timer.setInterval(750)
+        self.integration_timer.timeout.connect(self._poll_teamspeak)
+        self.integration_timer.start()
 
         self._load_config()
         self._apply_mode()
@@ -316,9 +327,42 @@ class MainWindow(QMainWindow):
 
         ts = QWidget()
         tf = QFormLayout(ts)
-        tf.addRow(QLabel("<b>TeamSpeak</b>"))
-        tf.addRow("Status:", QLabel("Windows-ClientQuery-Portierung folgt"))
-        tf.addRow("Geplant:", QLabel("Status, Sprecher, Channel, Channel Commander und PTT-Verknüpfung"))
+        tf.addRow(QLabel("<b>TeamSpeak 3 ClientQuery</b>"))
+
+        self.ts_host = QLineEdit("127.0.0.1")
+        self.ts_port = QLineEdit("25639")
+        self.ts_api_key = QLineEdit()
+        self.ts_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ts_status_label = QLabel("Nicht geprüft")
+        self.ts_channel_label = QLabel("—")
+        self.ts_speakers_label = QLabel("—")
+        self.ts_status_label.setWordWrap(True)
+        self.ts_speakers_label.setWordWrap(True)
+
+        found_key = read_default_api_key()
+        if found_key:
+            self.ts_api_key.setText(found_key)
+
+        self.ts_enabled.setEnabled(True)
+        self.ts_enabled.toggled.connect(lambda _v: self._poll_teamspeak(force=True))
+
+        ts_test = QPushButton("ClientQuery testen")
+        ts_test.clicked.connect(self._test_teamspeak)
+
+        tf.addRow("Host:", self.ts_host)
+        tf.addRow("Port:", self.ts_port)
+        tf.addRow("API-Key:", self.ts_api_key)
+        tf.addRow("", ts_test)
+        tf.addRow("Status:", self.ts_status_label)
+        tf.addRow("Channel:", self.ts_channel_label)
+        tf.addRow("Sprecher:", self.ts_speakers_label)
+        note = QLabel(
+            "Erster Windows-Schritt: nur lesen. FunkGateway zeigt Verbindung, Channel "
+            "und aktive Sprecher des laufenden TeamSpeak-3-Clients an. "
+            "Channel-Wechsel/Commander/PTT-Verknüpfung folgen nach dem erfolgreichen Test."
+        )
+        note.setWordWrap(True)
+        tf.addRow("", note)
         self.integration_tabs.addTab(ts, "TeamSpeak")
 
         mumble = QWidget()
@@ -730,6 +774,71 @@ class MainWindow(QMainWindow):
             "Windows-Port 0.2"
         )
 
+    # ------------------------------------------------------------ TeamSpeak
+    def _configure_teamspeak(self):
+        try:
+            port = int(self.ts_port.text().strip() or "25639")
+        except Exception:
+            port = 25639
+        self.ts_client.configure(
+            self.ts_host.text().strip() or "127.0.0.1",
+            port,
+            self.ts_api_key.text().strip(),
+        )
+
+    def _test_teamspeak(self):
+        self._configure_teamspeak()
+        try:
+            detail = self.ts_client.test()
+            cid, channel = self.ts_client.current_channel()
+            self.ts_status_label.setText("Verbunden · " + detail)
+            self.ts_channel_label.setText(channel or "—")
+            self.status_ts.setText("TeamSpeak: verbunden")
+            self.ts_enabled.setChecked(True)
+            self._poll_teamspeak(force=True)
+        except Exception as exc:
+            self.ts_status_label.setText("Fehler: " + str(exc))
+            self.status_ts.setText("TeamSpeak: nicht verbunden")
+            QMessageBox.warning(self, "TeamSpeak ClientQuery", str(exc))
+
+    def _poll_teamspeak(self, force=False):
+        if not hasattr(self, "ts_enabled") or not self.ts_enabled.isChecked():
+            if hasattr(self, "ts_status_label"):
+                self.ts_status_label.setText("Aus")
+                self.ts_channel_label.setText("—")
+                self.ts_speakers_label.setText("—")
+            self.status_ts.setText("TeamSpeak: aus")
+            return
+
+        self._configure_teamspeak()
+        try:
+            me = self.ts_client.whoami()
+            cid, channel = self.ts_client.current_channel()
+            speakers = self.ts_client.speakers()
+            nickname = me.get("client_nickname", "").strip()
+
+            self.ts_status_label.setText(
+                "Verbunden" + (f" · {nickname}" if nickname else "")
+            )
+            self.ts_channel_label.setText(channel or "—")
+            self.ts_speakers_label.setText(", ".join(speakers) if speakers else "—")
+            self.status_ts.setText(
+                "TeamSpeak: verbunden"
+                + (f" · {channel}" if channel else "")
+            )
+            self.ts_last_status = True
+            self.ts_last_channel = channel
+            self.ts_last_speakers = list(speakers)
+        except Exception as exc:
+            msg = str(exc)
+            self.ts_status_label.setText("Nicht verbunden · " + msg)
+            self.ts_channel_label.setText("—")
+            self.ts_speakers_label.setText("—")
+            self.status_ts.setText("TeamSpeak: nicht verbunden")
+            if force or self.ts_last_status is not False:
+                self.ui_log.appendPlainText("TeamSpeak: " + msg)
+            self.ts_last_status = False
+
     # --------------------------------------------------------------- updates
     def _build_update_menu(self):
         menu = self.menuBar().addMenu("&Hilfe")
@@ -828,6 +937,13 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self.gateway_ptt_line.setCurrentIndex(idx)
             self.gateway_ptt_invert.setChecked(bool(ptt_cfg.get("invert", False)))
+            ts_cfg = data.get("teamspeak", {})
+            if hasattr(self, "ts_host"):
+                self.ts_host.setText(str(ts_cfg.get("host", "127.0.0.1")))
+                self.ts_port.setText(str(ts_cfg.get("port", 25639)))
+                if ts_cfg.get("api_key"):
+                    self.ts_api_key.setText(str(ts_cfg.get("api_key")))
+                self.ts_enabled.setChecked(bool(ts_cfg.get("enabled", False)))
         except Exception as exc:
             self.frn_panel._log("Konfiguration konnte nicht geladen werden: " + str(exc))
 
@@ -847,6 +963,12 @@ class MainWindow(QMainWindow):
                 "port": self.gateway_ptt_port.currentText().strip(),
                 "line": self.gateway_ptt_line.currentText(),
                 "invert": self.gateway_ptt_invert.isChecked(),
+            },
+            "teamspeak": {
+                "enabled": self.ts_enabled.isChecked(),
+                "host": self.ts_host.text().strip(),
+                "port": int(self.ts_port.text().strip() or "25639"),
+                "api_key": self.ts_api_key.text().strip(),
             },
         }
         CFG_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -868,6 +990,11 @@ class MainWindow(QMainWindow):
             pass
         try:
             self._stop_gateway_ptt(silent=True)
+        except Exception:
+            pass
+        try:
+            self.integration_timer.stop()
+            self.ts_client.close()
         except Exception:
             pass
         try:
