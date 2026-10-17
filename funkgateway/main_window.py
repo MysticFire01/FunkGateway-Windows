@@ -696,7 +696,7 @@ class MainWindow(QMainWindow):
             QAbstractItemView.SelectionMode.SingleSelection
         )
         self.mumble_channel_tree.itemDoubleClicked.connect(
-            lambda _item, _col: self._move_mumble_native_channel()
+            self._mumble_channel_tree_double_clicked
         )
         cf.addWidget(self.mumble_channel_tree)
 
@@ -712,8 +712,8 @@ class MainWindow(QMainWindow):
         cf.addWidget(channel_actions)
 
         self.mumble_channel_hint = QLabel(
-            "Die Nutzerzahl wird live aus der nativen Mumble-Verbindung ermittelt. "
-            "Der aktuelle Channel wird hervorgehoben. Doppelklick wechselt direkt."
+            "Die Benutzer stehen wie im normalen Mumble direkt unter ihrem Channel. "
+            "Die Nutzerzahl wird live aktualisiert. Doppelklick auf einen Channel wechselt direkt."
         )
         self.mumble_channel_hint.setWordWrap(True)
         cf.addWidget(self.mumble_channel_hint)
@@ -1319,7 +1319,9 @@ class MainWindow(QMainWindow):
             if channel.get("current"):
                 label = "▶ " + label
             item = QTreeWidgetItem([label, str(users)])
-            item.setData(0, Qt.ItemDataRole.UserRole, channel)
+            channel_data = dict(channel)
+            channel_data["kind"] = "channel"
+            item.setData(0, Qt.ItemDataRole.UserRole, channel_data)
             if channel.get("current"):
                 font = item.font(0)
                 font.setBold(True)
@@ -1344,7 +1346,7 @@ class MainWindow(QMainWindow):
         if item is None:
             return ""
         data = item.data(0, Qt.ItemDataRole.UserRole)
-        if not isinstance(data, dict):
+        if not isinstance(data, dict) or data.get("kind") != "channel":
             return ""
 
         names = [str(data.get("name") or "")]
@@ -1356,6 +1358,99 @@ class MainWindow(QMainWindow):
             parent = parent.parent()
         names.reverse()
         return "/".join(name for name in names if name).strip("/")
+
+    def _mumble_channel_tree_double_clicked(self, item, _column):
+        data = item.data(0, Qt.ItemDataRole.UserRole) if item is not None else None
+        if not isinstance(data, dict) or data.get("kind") != "channel":
+            return
+        self.mumble_channel_tree.setCurrentItem(item)
+        self._move_mumble_native_channel()
+
+    def _update_mumble_channel_users(self, participants):
+        if not hasattr(self, "mumble_channel_tree"):
+            return
+
+        channel_items = {}
+
+        def walk_channel_items(parent_item=None):
+            count = (
+                self.mumble_channel_tree.topLevelItemCount()
+                if parent_item is None else parent_item.childCount()
+            )
+            for i in range(count):
+                item = (
+                    self.mumble_channel_tree.topLevelItem(i)
+                    if parent_item is None else parent_item.child(i)
+                )
+                data = item.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(data, dict) and data.get("kind") == "channel":
+                    channel_items[int(data.get("id"))] = item
+                    walk_channel_items(item)
+
+        walk_channel_items()
+
+        # Remove only user nodes; keep channel hierarchy, expansion and selection.
+        for channel_item in channel_items.values():
+            for idx in range(channel_item.childCount() - 1, -1, -1):
+                child = channel_item.child(idx)
+                data = child.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(data, dict) and data.get("kind") == "user":
+                    channel_item.takeChild(idx)
+
+        counts = {cid: 0 for cid in channel_items}
+        for participant in list(participants or []):
+            cid = participant.get("channel_id")
+            try:
+                cid = int(cid)
+            except Exception:
+                continue
+            channel_item = channel_items.get(cid)
+            if channel_item is None:
+                continue
+            counts[cid] = counts.get(cid, 0) + 1
+
+            user_data = dict(participant)
+            user_data["kind"] = "user"
+            user_item = QTreeWidgetItem([str(participant.get("name") or ""), ""])
+            user_item.setData(0, Qt.ItemDataRole.UserRole, user_data)
+
+            if participant.get("talking"):
+                mode = str(participant.get("speech_mode") or "normal")
+                if mode == "whisper":
+                    mouth_kind = "whisper"
+                elif participant.get("is_self"):
+                    mouth_kind = "self_talk"
+                else:
+                    mouth_kind = "talk"
+            else:
+                mouth_kind = "idle"
+
+            user_item.setIcon(0, self._mumble_mouth_icon(mouth_kind))
+
+            tips = []
+            if mouth_kind == "whisper":
+                tips.append("Flüstert")
+            elif mouth_kind == "self_talk":
+                tips.append("Du sprichst")
+            elif mouth_kind == "talk":
+                tips.append("Spricht")
+            else:
+                tips.append("Spricht nicht")
+            local_status = self._mumble_status_text(participant, True)
+            server_status = self._mumble_status_text(participant, False)
+            if local_status != "—":
+                tips.append("Lokal: " + local_status)
+            if server_status != "—":
+                tips.append("Server: " + server_status)
+            user_item.setToolTip(0, "\n".join(tips))
+
+            font = user_item.font(0)
+            font.setItalic(True)
+            user_item.setFont(0, font)
+            channel_item.addChild(user_item)
+
+        for cid, channel_item in channel_items.items():
+            channel_item.setText(1, str(counts.get(cid, 0)))
 
     def _move_mumble_native_channel(self):
         path = self._selected_mumble_channel_path()
@@ -1490,9 +1585,10 @@ class MainWindow(QMainWindow):
                 table.setItem(row, col, cell)
 
     def _mumble_native_participants_changed(self, participants):
+        rows = list(participants or [])
+        self._update_mumble_channel_users(rows)
         if not hasattr(self, "mumble_participants_all"):
             return
-        rows = list(participants or [])
         current_rows = [item for item in rows if item.get("current_channel")]
         self._fill_mumble_participant_table(self.mumble_participants_all, rows)
         self._fill_mumble_participant_table(
