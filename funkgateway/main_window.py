@@ -7,7 +7,7 @@ from PySide6.QtCore import QTimer, QObject, QThread, Signal
 from PySide6.QtWidgets import QMainWindow, QApplication, QMessageBox
 
 from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
-from . import updates
+import funkgateway.updates as updates
 from .global_hotkey import GlobalPttHotkey
 from .hotkeys import LocalPttHotkey, ModifierHoldWatcher
 from .integrations.frn_panel import FrnPanel
