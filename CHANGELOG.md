@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.9 – Direkte TeamSpeak-Plugin-Audiobrücke
+
+- neues natives TeamSpeak-3-Plugin „FunkGateway Audio Bridge“
+- FunkGateway sendet 48-kHz/16-Bit/Mono-PCM ausschließlich über localhost an das Plugin
+- Plugin mischt Funk-Audio direkt in TeamSpeaks Capture-Pfad
+- kein VB-CABLE/VoiceMeeter für den bevorzugten Audio-Weg nötig
+- Plugin schaltet während Funk-Audio temporär auf Continuous Transmission
+- ursprünglicher TeamSpeak PTT/VAD-Zustand wird danach wiederhergestellt
+- Plugin-Erreichbarkeit direkt aus FunkGateway prüfbar
+- virtueller Audiogeräte-Weg bleibt als optionaler Fallback erhalten
+
 ## 0.2.8 – Funk-Audio nach TeamSpeak + PC-PTT Commander
 
 - echte Funk-RX-Audiobrücke über PortAudio/sounddevice
