@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.25 – Native Mumble Audio ohne virtuelles Audiokabel
+
+- FunkGateway kann sich als eigener nativer Mumble-Teilnehmer direkt mit dem Server verbinden
+- direkter Mumble-Protokollweg unabhängig vom alten Desktop-Client
+- Funk-RX → Mumble als echtes PCM/Opus-Audio
+- Mumble → Funk speist PCM direkt in den generischen TX-Audiokern
+- RTS/DTR-PTT wird dadurch wie bei anderen Audioquellen automatisch vom tatsächlichen Mumble-Audio gesteuert
+- kein VB-CABLE oder VoiceMeeter nötig
+- aktiver Mumble-Channel und aktive Sprecher werden angezeigt
+- native Channel-Liste kann geladen und die Gateway-Verbindung umgeschaltet werden
+- separater Gateway-Nickname und optionales Server-Passwort
+- Funk-RX-Eingang, Schwellwert und Nachlauf separat konfigurierbar
+- normaler Mumble-Desktop-Client darf parallel geöffnet bleiben
+- native Mumble-Einstellungen werden portabel gespeichert
+- libopus wird im Windows-Release mitgeliefert
+- verwendet pymumble 1.6.1 für die direkte Mumble-Protokollverbindung
+
 ## 0.2.24 – Erster Windows-Mumble-Unterbau
 
 - Mumble-Untertab ist nicht mehr nur Platzhalter
