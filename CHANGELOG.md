@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3 Portable Preview
+
+- integrierter Windows-Selbstupdater unter Hilfe -> Nach Updates suchen
+- lädt den neuesten Windows-x64-Release direkt von GitHub
+- SHA256-Prüfung vor der Installation
+- laufende EXE wird sauber beendet und anschließend ersetzt
+- FunkGateway startet nach erfolgreichem Update automatisch neu
+- portable `config`- und `logs`-Ordner werden beim Update ausdrücklich nicht überschrieben
+- kein manuelles ZIP-Entpacken mehr ab dieser Version nötig
+
 ## 0.1.2 Portable Preview
 
 - Release-ZIP enthält niemals eine fertige `config.json`
