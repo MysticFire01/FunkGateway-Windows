@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QTabWidget, QGroupBox, QFormLayout,
     QCheckBox, QScrollArea, QPlainTextEdit, QLineEdit, QDoubleSpinBox, QSpinBox,
     QInputDialog, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QTreeWidget, QTreeWidgetItem, QFileDialog
+    QAbstractItemView, QTreeWidget, QTreeWidgetItem, QFileDialog, QMenu
 )
 
 from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
@@ -765,6 +765,12 @@ class MainWindow(QMainWindow):
         self.mumble_channel_tree.itemDoubleClicked.connect(
             self._mumble_channel_tree_double_clicked
         )
+        self.mumble_channel_tree.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.mumble_channel_tree.customContextMenuRequested.connect(
+            self._mumble_channel_context_menu
+        )
         cf.addWidget(self.mumble_channel_tree)
 
         channel_actions = QWidget()
@@ -786,7 +792,8 @@ class MainWindow(QMainWindow):
         self.mumble_channel_hint = QLabel(
             "Die Benutzer stehen direkt unter ihrem Channel. Rechts sieht man lokalen und "
             "serverseitigen Mute/Deaf-Status. Mit dem Auf-/Zuklappen-Schalter lassen sich "
-            "alle Benutzer auf einmal ein- oder ausblenden. Doppelklick wechselt den Channel."
+            "alle Benutzer auf einmal ein- oder ausblenden. Doppelklick wechselt den Channel. "
+            "Rechtsklick auf einen Benutzer öffnet Mute/Deaf-Aktionen."
         )
         self.mumble_channel_hint.setWordWrap(True)
         cf.addWidget(self.mumble_channel_hint)
@@ -903,6 +910,10 @@ class MainWindow(QMainWindow):
             )
             table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
             table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            table.customContextMenuRequested.connect(
+                lambda pos, t=table: self._mumble_participant_context_menu(t, pos)
+            )
 
         self.mumble_participant_tabs.addTab(
             self.mumble_participants_channel, "Aktueller Channel"
@@ -1926,10 +1937,12 @@ class MainWindow(QMainWindow):
     def _mumble_status_text(item, local):
         states = []
         if local:
+            if item.get("local_user_mute"):
+                states.append("🔇 lokal stumm")
             if item.get("local_mute"):
-                states.append("🎙 stumm")
+                states.append("🎙 self-stumm")
             if item.get("local_deaf"):
-                states.append("🎧 taub")
+                states.append("🎧 self-taub")
         else:
             if item.get("server_mute"):
                 states.append("🔒🎙 stumm")
@@ -1937,10 +1950,111 @@ class MainWindow(QMainWindow):
                 states.append("🔒🎧 taub")
         return "  ".join(states) if states else "—"
 
+    def _mumble_user_context_menu(self, participant, global_pos):
+        if not isinstance(participant, dict):
+            return
+        menu = QMenu(self)
+        is_self = bool(participant.get("is_self"))
+        session = participant.get("session")
+
+        if is_self:
+            mute_action = menu.addAction(
+                "🎙 Mikro wieder aktivieren"
+                if participant.get("local_mute")
+                else "🎙 Mikro stumm"
+            )
+            deaf_action = menu.addAction(
+                "🎧 Hören wieder aktivieren"
+                if participant.get("local_deaf")
+                else "🎧 Taub / Ton aus"
+            )
+            chosen = menu.exec(global_pos)
+            try:
+                if chosen == mute_action:
+                    self.mumble_native.set_self_mute(
+                        not bool(participant.get("local_mute"))
+                    )
+                elif chosen == deaf_action:
+                    self.mumble_native.set_self_deaf(
+                        not bool(participant.get("local_deaf"))
+                    )
+            except Exception as exc:
+                QMessageBox.warning(self, "Mumble", str(exc))
+            return
+
+        local_action = menu.addAction(
+            "🔊 Lokale Stummschaltung aufheben"
+            if participant.get("local_user_mute")
+            else "🔇 Lokal stummschalten"
+        )
+        menu.addSeparator()
+        server_mute_action = menu.addAction(
+            "🔒🎙 Server-Mute aufheben"
+            if participant.get("server_mute")
+            else "🔒🎙 Serverseitig stummschalten"
+        )
+        server_deaf_action = menu.addAction(
+            "🔒🎧 Server-Deaf aufheben"
+            if participant.get("server_deaf")
+            else "🔒🎧 Serverseitig taub schalten"
+        )
+        server_mute_action.setToolTip(
+            "Benötigt entsprechende Rechte auf dem Mumble-Server."
+        )
+        server_deaf_action.setToolTip(
+            "Benötigt entsprechende Rechte auf dem Mumble-Server."
+        )
+
+        chosen = menu.exec(global_pos)
+        if chosen is None:
+            return
+        try:
+            if chosen == local_action:
+                self.mumble_native.set_user_local_mute(
+                    session, not bool(participant.get("local_user_mute"))
+                )
+            elif chosen == server_mute_action:
+                self.mumble_native.set_user_server_mute(
+                    session, not bool(participant.get("server_mute"))
+                )
+            elif chosen == server_deaf_action:
+                self.mumble_native.set_user_server_deaf(
+                    session, not bool(participant.get("server_deaf"))
+                )
+        except Exception as exc:
+            QMessageBox.warning(self, "Mumble", str(exc))
+
+    def _mumble_channel_context_menu(self, pos):
+        item = self.mumble_channel_tree.itemAt(pos)
+        if item is None:
+            return
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(data, dict) or data.get("kind") != "user":
+            return
+        self._mumble_user_context_menu(
+            data, self.mumble_channel_tree.viewport().mapToGlobal(pos)
+        )
+
+    def _mumble_participant_context_menu(self, table, pos):
+        item = table.itemAt(pos)
+        if item is None:
+            return
+        name_item = table.item(item.row(), 0)
+        if name_item is None:
+            return
+        data = name_item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(data, dict):
+            return
+        table.selectRow(item.row())
+        self._mumble_user_context_menu(
+            data, table.viewport().mapToGlobal(pos)
+        )
+
     def _fill_mumble_participant_table(self, table, rows):
         table.setRowCount(len(rows))
         for row, item in enumerate(rows):
             name_item = QTableWidgetItem(str(item.get("name") or ""))
+            name_item.setData(Qt.ItemDataRole.UserRole, dict(item))
             if item.get("talking"):
                 mode = str(item.get("speech_mode") or "normal")
                 if mode == "whisper":
