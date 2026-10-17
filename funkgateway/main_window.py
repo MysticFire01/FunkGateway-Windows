@@ -75,6 +75,8 @@ class MainWindow(QMainWindow):
         self.ts_channels = []
         self.ts_commander_state = False
         self._ts_plugin_offer_checked = False
+        self._ts_plugin_last_reachable = None
+        self._ts_plugin_watchdog_failures = 0
         self.radio_rx_detector = RadioRxDetector(self)
         self.radio_rx_detector.activity.connect(self._radio_rx_activity_changed)
         self.radio_rx_detector.level.connect(self._radio_rx_level_changed)
@@ -114,6 +116,11 @@ class MainWindow(QMainWindow):
         self.integration_timer.setInterval(750)
         self.integration_timer.timeout.connect(self._poll_teamspeak)
         self.integration_timer.start()
+
+        self.ts_plugin_watchdog = QTimer(self)
+        self.ts_plugin_watchdog.setInterval(3000)
+        self.ts_plugin_watchdog.timeout.connect(self._ts_plugin_watchdog_tick)
+        self.ts_plugin_watchdog.start()
 
         self._load_config()
         self._ui_level_changed()
@@ -514,25 +521,25 @@ class MainWindow(QMainWindow):
         self.ts_enabled.toggled.connect(lambda _v: self._poll_teamspeak(force=True))
         self.ts_commander.setEnabled(not self.ts_commander_auto.isChecked())
 
-        ts_test = QPushButton("ClientQuery testen")
-        ts_test.clicked.connect(self._test_teamspeak)
-        ts_refresh_channels = QPushButton("Channel-Liste laden")
-        ts_refresh_channels.clicked.connect(self._refresh_ts_channels)
-        ts_move = QPushButton("In gewählten Channel wechseln")
-        ts_move.clicked.connect(self._move_ts_channel)
+        self.ts_query_test_btn = QPushButton("ClientQuery testen")
+        self.ts_query_test_btn.clicked.connect(self._test_teamspeak)
+        self.ts_refresh_channels_btn = QPushButton("Channel-Liste laden")
+        self.ts_refresh_channels_btn.clicked.connect(self._refresh_ts_channels)
+        self.ts_move_btn = QPushButton("In gewählten Channel wechseln")
+        self.ts_move_btn.clicked.connect(self._move_ts_channel)
 
         tf.addRow("Host:", self.ts_host)
         tf.addRow("Port:", self.ts_port)
         tf.addRow("API-Key:", self.ts_api_key)
-        tf.addRow("", ts_test)
+        tf.addRow("", self.ts_query_test_btn)
         tf.addRow("Status:", self.ts_status_label)
         tf.addRow("Server:", self.ts_server_label)
         tf.addRow("Eigener Client:", self.ts_identity_label)
         tf.addRow("Aktueller Channel:", self.ts_channel_label)
         tf.addRow("Aktive Sprecher:", self.ts_speakers_label)
         tf.addRow("Channel auswählen:", self.ts_channel_select)
-        tf.addRow("", ts_refresh_channels)
-        tf.addRow("", ts_move)
+        tf.addRow("", self.ts_refresh_channels_btn)
+        tf.addRow("", self.ts_move_btn)
         tf.addRow("", self.ts_commander)
         tf.addRow("", self.ts_commander_auto)
         tf.addRow("", self.ts_pc_ptt_commander)
@@ -689,6 +696,44 @@ class MainWindow(QMainWindow):
             getattr(self, "ts_rx_level_label", None),
             getattr(self, "ts_plugin_test", None),
             getattr(self, "ts_plugin_install", None),
+        ):
+            if widget is not None:
+                self._set_form_field_visible(widget, not simple)
+
+        # Integration views follow the same three levels.
+        if hasattr(self, "frn_panel"):
+            try:
+                self.frn_panel.apply_ui_level(level)
+            except Exception as exc:
+                self.ui_log.appendPlainText("FRN Oberflächenstufe: " + str(exc))
+
+        # TeamSpeak: Simple keeps day-to-day controls, Full exposes normal
+        # configuration/maintenance, Developer adds diagnostics/probe.
+        for widget in (
+            getattr(self, "ts_host", None),
+            getattr(self, "ts_port", None),
+            getattr(self, "ts_api_key", None),
+            getattr(self, "ts_query_test_btn", None),
+            getattr(self, "ts_channel_select", None),
+            getattr(self, "ts_refresh_channels_btn", None),
+            getattr(self, "ts_move_btn", None),
+            getattr(self, "ts_commander", None),
+            getattr(self, "ts_audio_bridge_mode", None),
+            getattr(self, "ts_audio_output", None),
+            getattr(self, "ts_plugin_install", None),
+        ):
+            if widget is not None:
+                self._set_form_field_visible(widget, not simple)
+
+        # Probe button is diagnostic rather than normal operation.
+        if hasattr(self, "ts_plugin_test"):
+            self._set_form_field_visible(self.ts_plugin_test, developer)
+
+        # Fine RX tuning is Full/Developer only; status itself remains visible.
+        for widget in (
+            getattr(self, "ts_rx_threshold", None),
+            getattr(self, "ts_rx_hang", None),
+            getattr(self, "ts_rx_level_label", None),
         ):
             if widget is not None:
                 self._set_form_field_visible(widget, not simple)
@@ -1494,11 +1539,77 @@ class MainWindow(QMainWindow):
         if answer == QMessageBox.StandardButton.Yes:
             self._launch_ts_plugin_installer()
 
+    def _ts_plugin_watchdog_tick(self):
+        """Keep the native TS3 bridge recoverable across TS/plugin restarts."""
+        if not hasattr(self, "ts_audio_bridge_enabled"):
+            return
+        if not self.ts_enabled.isChecked():
+            return
+        if (self.ts_audio_bridge_mode.currentData() or "plugin") != "plugin":
+            return
+        if not self.ts_audio_bridge_enabled.isChecked():
+            return
+
+        ok = self.ts_plugin_bridge.probe(timeout=0.08)
+        if not ok:
+            self._ts_plugin_watchdog_failures += 1
+            if self._ts_plugin_watchdog_failures >= 2:
+                self._ts_plugin_last_reachable = False
+                self.ts_audio_bridge_status.setText(
+                    "TS3-Plugin: nicht erreichbar · wartet auf TeamSpeak"
+                )
+            return
+
+        recovered = self._ts_plugin_last_reachable is False
+        self._ts_plugin_last_reachable = True
+        self._ts_plugin_watchdog_failures = 0
+
+        # If TeamSpeak/plugin returned while the radio gateway remained up,
+        # re-arm the bridge automatically instead of requiring a gateway restart.
+        if (
+            self.gateway_started
+            and self._mode() in ("gateway", "radio_parrot")
+        ):
+            if not self.ts_plugin_bridge.running:
+                try:
+                    self._start_radio_audio_bridge()
+                except Exception as exc:
+                    self._radio_bridge_error(str(exc))
+                    return
+            else:
+                if recovered:
+                    try:
+                        self.ts_plugin_bridge.reset_plugin()
+                    except Exception:
+                        pass
+                try:
+                    self.ts_plugin_bridge.set_active(bool(self.radio_rx_active))
+                except Exception:
+                    pass
+                self.ts_audio_bridge_status.setText(
+                    "TS3-Plugin-Brücke: SENDEN"
+                    if self.radio_rx_active else "TS3-Plugin-Brücke: bereit"
+                )
+
+        if recovered:
+            self.ui_log.appendPlainText(
+                "TeamSpeak Plugin-Watchdog: Plugin wieder erreichbar, Brücke neu bewaffnet."
+            )
+
     def _probe_ts_plugin(self):
         ok = self.ts_plugin_bridge.probe()
         if ok:
-            self.ts_audio_bridge_status.setText("TS3-Plugin: erreichbar")
-            QMessageBox.information(self, "TeamSpeak Plugin", "FunkGateway Audio Bridge Plugin ist erreichbar.")
+            version = self.ts_plugin_bridge.plugin_version() or "unbekannt"
+            self.ts_audio_bridge_status.setText(
+                f"TS3-Plugin: erreichbar · Version {version}"
+            )
+            QMessageBox.information(
+                self,
+                "TeamSpeak Plugin",
+                "FunkGateway Audio Bridge Plugin ist erreichbar.\n\n"
+                f"Installierte Version: {version}\n"
+                f"Mitgelieferte Version: {TS_PLUGIN_VERSION}"
+            )
         else:
             self.ts_audio_bridge_status.setText("TS3-Plugin: nicht erreichbar")
             QMessageBox.warning(
@@ -1546,8 +1657,14 @@ class MainWindow(QMainWindow):
                     self.ts_audio_bridge_status.setText("TS3-Plugin: nicht erreichbar")
                     return
                 self.ts_plugin_bridge.start(inp)
+                self.ts_plugin_bridge.reset_plugin()
                 self.ts_plugin_bridge.set_active(bool(self.radio_rx_active))
-                self.ts_audio_bridge_status.setText("TS3-Plugin-Brücke: bereit")
+                self._ts_plugin_last_reachable = True
+                self._ts_plugin_watchdog_failures = 0
+                self.ts_audio_bridge_status.setText(
+                    "TS3-Plugin-Brücke: SENDEN"
+                    if self.radio_rx_active else "TS3-Plugin-Brücke: bereit"
+                )
             else:
                 out = self.ts_audio_output.currentData()
                 if out is None:
@@ -2057,6 +2174,8 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.integration_timer.stop()
+            if hasattr(self, "ts_plugin_watchdog"):
+                self.ts_plugin_watchdog.stop()
             self.ts_client.close()
         except Exception:
             pass
