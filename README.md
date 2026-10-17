@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.13 Portable Preview**
+**0.1.14 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.13\
+FunkGateway-Windows-0.1.14\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -147,3 +147,12 @@ From 0.1.13 the FRN panel has an **Audio output test** button. It plays a short
 tone through exactly the selected Windows output device using that device's
 default sample rate. RX/TX meters also return to idle after about 0.8 seconds
 without fresh samples instead of freezing on the last value.
+
+
+## Race-free room switching
+
+From 0.1.14, changing FRN rooms during active RX audio uses an ordered shutdown:
+network receive is stopped first, RX/TX audio workers are joined, and only then
+are PortAudio streams and the GSM codec released. This prevents the Windows
+native crash that could occur when a room was changed while audio was being
+decoded or written to the speaker.
