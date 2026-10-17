@@ -3,13 +3,39 @@ from __future__ import annotations
 import json
 import time
 
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QMainWindow, QApplication
+from PySide6.QtCore import QTimer, QObject, QThread, Signal
+from PySide6.QtWidgets import QMainWindow, QApplication, QMessageBox
 
-from .constants import APP_NAME, VERSION, CFG_FILE, ensure_cfg
+from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
+from . import updates
 from .global_hotkey import GlobalPttHotkey
 from .hotkeys import LocalPttHotkey, ModifierHoldWatcher
 from .integrations.frn_panel import FrnPanel
+
+
+class UpdateWorker(QObject):
+    finished = Signal(object, object)
+    failed = Signal(str)
+
+    def __init__(self, action: str, release=None, asset=None):
+        super().__init__()
+        self.action = action
+        self.release = release
+        self.asset = asset
+
+    def run(self):
+        try:
+            if self.action == "check":
+                release = updates.fetch_latest_release()
+                asset = updates.choose_windows_asset(release)
+                self.finished.emit(release, asset)
+            else:
+                _root, extract_dir = updates.download_and_prepare(
+                    self.release, self.asset
+                )
+                self.finished.emit(extract_dir, None)
+        except Exception as exc:
+            self.failed.emit(str(exc))
 
 
 class MainWindow(QMainWindow):
@@ -23,6 +49,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP_NAME} {VERSION} – FRN Preview")
         self.resize(1050, 760)
         self.setMinimumSize(820, 600)
+
+        self._update_thread = None
+        self._update_worker = None
+        self._build_update_menu()
 
         self._ptt_pressed = False
         self._ptt_started = None
@@ -54,6 +84,98 @@ class MainWindow(QMainWindow):
 
         self._load_config()
         self._configure_hotkey()
+
+    def _build_update_menu(self):
+        menu = self.menuBar().addMenu("&Hilfe")
+        action = menu.addAction("Nach Updates suchen …")
+        action.triggered.connect(self.check_for_updates)
+
+    def _run_update_worker(self, worker, done):
+        if self._update_thread is not None:
+            return
+        thread = QThread(self)
+        self._update_thread = thread
+        self._update_worker = worker
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(done)
+        worker.failed.connect(self._update_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._update_thread_finished)
+        thread.start()
+
+    def _update_thread_finished(self):
+        self._update_thread = None
+        self._update_worker = None
+
+    def check_for_updates(self):
+        self.statusBar().showMessage("Suche nach FunkGateway-Updates …")
+        self._run_update_worker(UpdateWorker("check"), self._update_check_done)
+
+    def _update_check_done(self, release, asset):
+        self.statusBar().clearMessage()
+        if not release or not asset:
+            QMessageBox.warning(
+                self,
+                "FunkGateway Update",
+                "Der aktuelle GitHub-Release enthält kein passendes Windows-x64-ZIP.",
+            )
+            return
+
+        remote = str(release.get("tag_name") or "").lstrip("vV")
+        if not updates.is_newer(remote, VERSION):
+            QMessageBox.information(
+                self,
+                "FunkGateway Update",
+                f"Du verwendest bereits die aktuelle Version {VERSION}.",
+            )
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "FunkGateway Update",
+            f"Version {remote} ist verfügbar.\n\n"
+            f"Aktuell: {VERSION}\nNeu: {remote}\n\n"
+            "Jetzt herunterladen und installieren?\n"
+            "Deine config und logs bleiben erhalten.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self.statusBar().showMessage(f"Lade FunkGateway {remote} herunter …")
+        self._run_update_worker(
+            UpdateWorker("download", release, asset), self._update_download_done
+        )
+
+    def _update_download_done(self, extract_dir, _unused):
+        self.statusBar().clearMessage()
+        answer = QMessageBox.information(
+            self,
+            "FunkGateway Update",
+            "Das Update wurde heruntergeladen und geprüft.\n\n"
+            "FunkGateway wird jetzt beendet, aktualisiert und automatisch neu gestartet.",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Ok,
+        )
+        if answer != QMessageBox.StandardButton.Ok:
+            return
+        try:
+            updates.launch_portable_update(extract_dir, APP_DIR)
+        except Exception as exc:
+            QMessageBox.critical(self, "FunkGateway Update", str(exc))
+            return
+        QApplication.quit()
+
+    def _update_failed(self, message):
+        self.statusBar().clearMessage()
+        QMessageBox.critical(
+            self,
+            "FunkGateway Update",
+            "Update fehlgeschlagen:\n\n" + str(message),
+        )
 
     def _mode(self):
         # FrnPanel uses this to select the legitimate FRN PC-only class (CL=2).
