@@ -190,6 +190,7 @@ class MainWindow(QMainWindow):
         self.mumble_native.channelChanged.connect(self._mumble_native_channel_changed)
         self.mumble_native.speakersChanged.connect(self._mumble_native_speakers_changed)
         self.mumble_native.participantsChanged.connect(self._mumble_native_participants_changed)
+        self.mumble_native.chatReceived.connect(self._mumble_chat_received)
         self.mumble_native.radioRxActivity.connect(self._mumble_native_rx_activity_changed)
         self.mumble_native.radioRxLevel.connect(self._mumble_native_rx_level_changed)
         self.mumble_native.networkRxLevel.connect(self._mumble_native_network_rx_level_changed)
@@ -1605,6 +1606,38 @@ class MainWindow(QMainWindow):
         pv.addWidget(self.mumble_participant_legend)
         self.mumble_tabs.addTab(mw, "Teilnehmer")
 
+        # ------------------------------------------------------- Mumble-Chat
+        mw = QWidget()
+        cv = QVBoxLayout(mw)
+        self.mumble_chat_history = QPlainTextEdit()
+        self.mumble_chat_history.setReadOnly(True)
+        self.mumble_chat_history.setPlaceholderText("Mumble-Nachrichten erscheinen nach der Verbindung hier.")
+        self.mumble_chat_history.document().setMaximumBlockCount(1000)
+        cv.addWidget(self.mumble_chat_history, 1)
+        recipient_row = QHBoxLayout()
+        self.mumble_chat_target = QComboBox()
+        self.mumble_chat_target.addItem("Aktueller Channel (öffentlich)", None)
+        recipient_row.addWidget(QLabel("Empfänger:"))
+        recipient_row.addWidget(self.mumble_chat_target, 1)
+        cv.addLayout(recipient_row)
+        send_row = QHBoxLayout()
+        self.mumble_chat_input = QLineEdit()
+        self.mumble_chat_input.setPlaceholderText("Nachricht schreiben und Enter drücken …")
+        self.mumble_chat_input.returnPressed.connect(self._mumble_send_chat)
+        self.mumble_chat_send_btn = QPushButton("Senden")
+        self.mumble_chat_send_btn.clicked.connect(self._mumble_send_chat)
+        self.mumble_chat_send_btn.setEnabled(False)
+        send_row.addWidget(self.mumble_chat_input, 1)
+        send_row.addWidget(self.mumble_chat_send_btn)
+        cv.addLayout(send_row)
+        hint = QLabel(
+            "Der Channel-Chat geht an den aktuellen Raum. Für private Nachrichten "
+            "einen Benutzer aus der Empfängerliste wählen. HTML-Nachrichten werden als Text angezeigt."
+        )
+        hint.setWordWrap(True)
+        cv.addWidget(hint)
+        self.mumble_tabs.addTab(mw, "Chat")
+
         # ------------------------------------------------------- Audio / PTT
         mw = QWidget()
         af = QFormLayout(mw)
@@ -2572,6 +2605,54 @@ class MainWindow(QMainWindow):
                 "Der gewünschte Channel wurde in der nativen Verbindung nicht gefunden."
             )
 
+    def _mumble_chat_line(self, label, message):
+        from datetime import datetime
+        import html
+        import re
+        message = re.sub(r"<[^>]*>", "", str(message or "").replace("<br>", " "))
+        message = html.unescape(message)
+        message = message.replace("\r", " ").replace("\n", " ")
+        self.mumble_chat_history.appendPlainText(
+            f"[{datetime.now():%H:%M:%S}] {label}: {message}"
+        )
+
+    def _mumble_chat_received(self, item):
+        actor = item.get("actor")
+        sender = self.mumble_native.chat_sender_name(actor)
+        scope = "Privat" if item.get("sessions") else "Channel/Server"
+        self._mumble_chat_line(f"{scope} · {sender}", item.get("message", ""))
+
+    def _mumble_send_chat(self):
+        message = self.mumble_chat_input.text().strip()
+        if not message:
+            return
+        try:
+            sent = self.mumble_native.send_chat(
+                message, session=self.mumble_chat_target.currentData()
+            )
+            self._mumble_chat_line(f"Ich → {sent['target']}", message)
+            self.mumble_chat_input.clear()
+        except Exception as exc:
+            QMessageBox.warning(self, "Mumble-Chat", str(exc))
+
+    def _update_mumble_chat_targets(self, participants):
+        if not hasattr(self, "mumble_chat_target"):
+            return
+        previous = self.mumble_chat_target.currentData()
+        self.mumble_chat_target.blockSignals(True)
+        self.mumble_chat_target.clear()
+        self.mumble_chat_target.addItem("Aktueller Channel (öffentlich)", None)
+        for participant in participants:
+            if participant.get("is_self"):
+                continue
+            self.mumble_chat_target.addItem(
+                str(participant.get("name") or "Unbekannt"),
+                int(participant["session"]),
+            )
+        index = self.mumble_chat_target.findData(previous)
+        self.mumble_chat_target.setCurrentIndex(index if index >= 0 else 0)
+        self.mumble_chat_target.blockSignals(False)
+
     def _mumble_native_status_changed(self, text):
         if hasattr(self, "mumble_native_status_label"):
             self.mumble_native_status_label.setText(str(text))
@@ -2643,8 +2724,12 @@ class MainWindow(QMainWindow):
                 and self.mumble_pc_ptt_enabled.isChecked()
             )
         self._configure_mumble_hotkey()
+        if hasattr(self, "mumble_chat_send_btn"):
+            self.mumble_chat_send_btn.setEnabled(connected)
         if connected:
             self.status_mumble.setText("Mumble: verbunden")
+            self.mumble_chat_history.clear()
+            self._mumble_chat_line("System", "Verbunden – Chat bereit")
             self._update_live_status()
             self._mumble_channel_refresh_attempts = 0
             QTimer.singleShot(600, self._retry_mumble_channels)
@@ -2652,6 +2737,9 @@ class MainWindow(QMainWindow):
                 self._ensure_mumble_radio_tx_engine()
         else:
             self._parrot_reset()
+            if hasattr(self, "mumble_chat_history"):
+                self._mumble_chat_line("System", "Verbindung getrennt")
+                self._update_mumble_chat_targets([])
             if hasattr(self, "mumble_native_status_label"):
                 self.mumble_native_status_label.setText("Native Mumble: getrennt")
             self._clear_mumble_runtime_views()
@@ -2918,6 +3006,7 @@ class MainWindow(QMainWindow):
 
     def _mumble_native_participants_changed(self, participants):
         rows = list(participants or [])
+        self._update_mumble_chat_targets(rows)
         for self_row in rows:
             if self_row.get("is_self"):
                 muted = bool(self_row.get("local_mute"))
