@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.15 Portable Preview
+
+- Windows-Build von PyInstaller Onefile auf Onedir/Standalone umgestellt
+- keine temporäre `_MEI...`-Entpackung mehr beim Programmstart
+- `python312.dll` und Runtime-Dateien liegen fest im Programmordner
+- behebt Startfehler „Failed to load Python DLL ... _MEI ... python312.dll“
+- weiterhin komplett portable und für externe Laufwerke geeignet
+- integrierter Updater bleibt erhalten und ersetzt rekursiv die Programmdateien
+- config und logs bleiben weiterhin geschützt
+- RX/TX-Resampling, GSM-WAV49 und race-freier Raumwechsel bleiben enthalten
+
 ## 0.1.14 Portable Preview
 
 - behebt Windows-Absturz beim Raumwechsel während laufender FRN-RX-Sprache
