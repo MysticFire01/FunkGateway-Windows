@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.36 – Dark-Theme-Fix für Mumble-Listen
+
+- behebt helle/weiße Wechselzeilen in Mumble-Serverliste und Channelbaum
+- QTreeWidget/QTreeView verwenden jetzt dieselbe dunkle Palette wie Tabellen
+- alternierende Zeilen sind dunkelgrau statt weiß
+- Auswahl bleibt in der Akzentfarbe sichtbar
+- gilt einheitlich für Serverliste, Channelbaum und weitere Baumansichten
+
 ## 0.2.35 – Mumble Zertifikat-Fix, eigene globale PTT und orange Eigenanzeige
 
 - Mumble-PC-PTT besitzt einen eigenen Shortcut unabhängig von FRN
