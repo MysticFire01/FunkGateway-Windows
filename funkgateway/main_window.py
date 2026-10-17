@@ -65,6 +65,9 @@ class MainWindow(QMainWindow):
         self.ts_last_status = None
         self.ts_last_speakers = []
         self.ts_last_channel = None
+        self.ts_last_server = None
+        self.ts_channels = []
+        self.ts_commander_state = False
 
         self._build_update_menu()
         self._build_shell()
@@ -334,10 +337,19 @@ class MainWindow(QMainWindow):
         self.ts_api_key = QLineEdit()
         self.ts_api_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.ts_status_label = QLabel("Nicht geprüft")
+        self.ts_server_label = QLabel("—")
+        self.ts_identity_label = QLabel("—")
         self.ts_channel_label = QLabel("—")
         self.ts_speakers_label = QLabel("—")
         self.ts_status_label.setWordWrap(True)
+        self.ts_server_label.setWordWrap(True)
+        self.ts_identity_label.setWordWrap(True)
         self.ts_speakers_label.setWordWrap(True)
+
+        self.ts_channel_select = QComboBox()
+        self.ts_channel_select.setMinimumWidth(280)
+        self.ts_commander = QCheckBox("Channel Commander")
+        self.ts_commander.toggled.connect(self._set_ts_commander)
 
         found_key = read_default_api_key()
         if found_key:
@@ -348,18 +360,28 @@ class MainWindow(QMainWindow):
 
         ts_test = QPushButton("ClientQuery testen")
         ts_test.clicked.connect(self._test_teamspeak)
+        ts_refresh_channels = QPushButton("Channel-Liste laden")
+        ts_refresh_channels.clicked.connect(self._refresh_ts_channels)
+        ts_move = QPushButton("In gewählten Channel wechseln")
+        ts_move.clicked.connect(self._move_ts_channel)
 
         tf.addRow("Host:", self.ts_host)
         tf.addRow("Port:", self.ts_port)
         tf.addRow("API-Key:", self.ts_api_key)
         tf.addRow("", ts_test)
         tf.addRow("Status:", self.ts_status_label)
-        tf.addRow("Channel:", self.ts_channel_label)
-        tf.addRow("Sprecher:", self.ts_speakers_label)
+        tf.addRow("Server:", self.ts_server_label)
+        tf.addRow("Eigener Client:", self.ts_identity_label)
+        tf.addRow("Aktueller Channel:", self.ts_channel_label)
+        tf.addRow("Aktive Sprecher:", self.ts_speakers_label)
+        tf.addRow("Channel auswählen:", self.ts_channel_select)
+        tf.addRow("", ts_refresh_channels)
+        tf.addRow("", ts_move)
+        tf.addRow("", self.ts_commander)
         note = QLabel(
-            "Erster Windows-Schritt: nur lesen. FunkGateway zeigt Verbindung, Channel "
-            "und aktive Sprecher des laufenden TeamSpeak-3-Clients an. "
-            "Channel-Wechsel/Commander/PTT-Verknüpfung folgen nach dem erfolgreichen Test."
+            "TeamSpeak-Steuerung: Status, Server, eigener Client, Channel-Liste, "
+            "aktive Sprecher, Channel-Wechsel und Channel Commander. "
+            "Die Audio-/PTT-Verknüpfung mit dem Funkweg folgt als nächster Schritt."
         )
         note.setWordWrap(True)
         tf.addRow("", note)
@@ -791,20 +813,87 @@ class MainWindow(QMainWindow):
         try:
             detail = self.ts_client.test()
             cid, channel = self.ts_client.current_channel()
+            _server_key, server_name = self.ts_client.server_identity()
+            me = self.ts_client.whoami()
+            nickname = me.get("client_nickname", "").strip()
             self.ts_status_label.setText("Verbunden · " + detail)
+            self.ts_server_label.setText(server_name or "—")
+            self.ts_identity_label.setText(
+                (nickname or "—") + (f" · CLID {self.ts_client.clid}" if self.ts_client.clid else "")
+            )
             self.ts_channel_label.setText(channel or "—")
             self.status_ts.setText("TeamSpeak: verbunden")
             self.ts_enabled.setChecked(True)
+            self._refresh_ts_channels()
             self._poll_teamspeak(force=True)
         except Exception as exc:
             self.ts_status_label.setText("Fehler: " + str(exc))
             self.status_ts.setText("TeamSpeak: nicht verbunden")
             QMessageBox.warning(self, "TeamSpeak ClientQuery", str(exc))
 
+    def _refresh_ts_channels(self):
+        if not self.ts_enabled.isChecked():
+            return
+        self._configure_teamspeak()
+        try:
+            current_cid, _current_name = self.ts_client.current_channel()
+            channels = self.ts_client.channels()
+            self.ts_channels = list(channels)
+            self.ts_channel_select.blockSignals(True)
+            self.ts_channel_select.clear()
+            for cid, name in channels:
+                self.ts_channel_select.addItem(name, int(cid))
+            if current_cid:
+                idx = self.ts_channel_select.findData(int(current_cid))
+                if idx >= 0:
+                    self.ts_channel_select.setCurrentIndex(idx)
+            self.ts_channel_select.blockSignals(False)
+            self.ui_log.appendPlainText(
+                f"TeamSpeak: {len(channels)} Channel geladen."
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "TeamSpeak Channel-Liste", str(exc))
+
+    def _move_ts_channel(self):
+        if not self.ts_enabled.isChecked():
+            return
+        cid = self.ts_channel_select.currentData()
+        if cid is None:
+            QMessageBox.information(self, "TeamSpeak", "Bitte zuerst einen Channel auswählen.")
+            return
+        self._configure_teamspeak()
+        try:
+            self.ts_client.move_self(int(cid))
+            self._poll_teamspeak(force=True)
+        except Exception as exc:
+            QMessageBox.warning(self, "TeamSpeak Channel-Wechsel", str(exc))
+
+    def _set_ts_commander(self, enabled):
+        if not self.ts_enabled.isChecked():
+            if enabled:
+                self.ts_commander.blockSignals(True)
+                self.ts_commander.setChecked(False)
+                self.ts_commander.blockSignals(False)
+            return
+        self._configure_teamspeak()
+        try:
+            self.ts_client.set_channel_commander(bool(enabled))
+            self.ts_commander_state = bool(enabled)
+            self.ui_log.appendPlainText(
+                "TeamSpeak: Channel Commander " + ("ein." if enabled else "aus.")
+            )
+        except Exception as exc:
+            self.ts_commander.blockSignals(True)
+            self.ts_commander.setChecked(self.ts_commander_state)
+            self.ts_commander.blockSignals(False)
+            QMessageBox.warning(self, "TeamSpeak Channel Commander", str(exc))
+
     def _poll_teamspeak(self, force=False):
         if not hasattr(self, "ts_enabled") or not self.ts_enabled.isChecked():
             if hasattr(self, "ts_status_label"):
                 self.ts_status_label.setText("Aus")
+                self.ts_server_label.setText("—")
+                self.ts_identity_label.setText("—")
                 self.ts_channel_label.setText("—")
                 self.ts_speakers_label.setText("—")
             self.status_ts.setText("TeamSpeak: aus")
@@ -817,21 +906,41 @@ class MainWindow(QMainWindow):
             speakers = self.ts_client.speakers()
             nickname = me.get("client_nickname", "").strip()
 
-            self.ts_status_label.setText(
-                "Verbunden" + (f" · {nickname}" if nickname else "")
+            if force or not self.ts_last_server:
+                _server_key, server_name = self.ts_client.server_identity()
+                self.ts_last_server = server_name
+            else:
+                server_name = self.ts_last_server
+
+            self.ts_status_label.setText("Verbunden")
+            self.ts_server_label.setText(server_name or "—")
+            self.ts_identity_label.setText(
+                (nickname or "—") + (f" · CLID {self.ts_client.clid}" if self.ts_client.clid else "")
             )
             self.ts_channel_label.setText(channel or "—")
-            self.ts_speakers_label.setText(", ".join(speakers) if speakers else "—")
+            self.ts_speakers_label.setText(
+                "\n".join("● " + name for name in speakers) if speakers else "—"
+            )
             self.status_ts.setText(
                 "TeamSpeak: verbunden"
                 + (f" · {channel}" if channel else "")
             )
+
+            if cid:
+                idx = self.ts_channel_select.findData(int(cid))
+                if idx >= 0 and self.ts_channel_select.currentIndex() != idx:
+                    self.ts_channel_select.blockSignals(True)
+                    self.ts_channel_select.setCurrentIndex(idx)
+                    self.ts_channel_select.blockSignals(False)
+
             self.ts_last_status = True
             self.ts_last_channel = channel
             self.ts_last_speakers = list(speakers)
         except Exception as exc:
             msg = str(exc)
             self.ts_status_label.setText("Nicht verbunden · " + msg)
+            self.ts_server_label.setText("—")
+            self.ts_identity_label.setText("—")
             self.ts_channel_label.setText("—")
             self.ts_speakers_label.setText("—")
             self.status_ts.setText("TeamSpeak: nicht verbunden")
@@ -944,6 +1053,10 @@ class MainWindow(QMainWindow):
                 if ts_cfg.get("api_key"):
                     self.ts_api_key.setText(str(ts_cfg.get("api_key")))
                 self.ts_enabled.setChecked(bool(ts_cfg.get("enabled", False)))
+                self.ts_commander.blockSignals(True)
+                self.ts_commander.setChecked(bool(ts_cfg.get("channel_commander", False)))
+                self.ts_commander_state = self.ts_commander.isChecked()
+                self.ts_commander.blockSignals(False)
         except Exception as exc:
             self.frn_panel._log("Konfiguration konnte nicht geladen werden: " + str(exc))
 
@@ -969,6 +1082,7 @@ class MainWindow(QMainWindow):
                 "host": self.ts_host.text().strip(),
                 "port": int(self.ts_port.text().strip() or "25639"),
                 "api_key": self.ts_api_key.text().strip(),
+                "channel_commander": self.ts_commander.isChecked(),
             },
         }
         CFG_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
