@@ -138,3 +138,5 @@ jobs:
           }
           gh release create "v0.2.10" "FunkGateway-Windows-0.2.10-x64.zip" "FunkGateway-Windows-0.2.10-x64.zip.sha256" "FunkGateway-Windows-0.2.10-EXE.sha256" "FunkGateway-Audio-Bridge.ts3_plugin" --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "FunkGateway Windows 0.2.10 Preview" --notes-file RELEASE_NOTES.md
 # retrigger after updater syntax fix
+
+# retrigger after NOMINMAX fix
