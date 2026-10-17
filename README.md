@@ -622,3 +622,11 @@ The Mumble connection page now includes an editable favorites drop-down.
 deleted. Several radio/community Mumble servers are provided as starter
 favorites, and users can add, edit and remove any number of their own entries.
 The complete favorites list is stored portably in `config.json`.
+
+
+## Top-bar Mumble PTT 0.2.41
+
+PC-user mode now exposes a dedicated Mumble PTT button beside the FRN PTT in
+the permanent top bar. It appears only while the native Mumble connection is
+actually connected, and uses the same push-to-talk path as the Mumble
+integration page. FRN and Mumble PTT/hotkeys remain independent.
