@@ -493,18 +493,24 @@ class FrnNativeClient:
         self.thread.start()
 
     def stop(self):
+        """Request a synchronous, race-free client shutdown.
+
+        Do not close PortAudio streams or libgsm from the caller thread while
+        RX/TX worker threads may still be using them. Instead stop networking
+        first, let _run() enter its finally block, wait for audio workers there,
+        and only then release stream/codec resources.
+        """
         self.stop_evt.set()
         self.want_tx.clear()
         self.tx_granted_evt.clear()
+
         if self.input_proc:
             try:
                 self.input_proc.terminate()
             except Exception:
                 pass
-            self.input_proc = None
-        self._close_audio()
+
         s = self.sock
-        self.sock = None
         if s:
             try:
                 s.shutdown(socket.SHUT_RDWR)
@@ -514,6 +520,14 @@ class FrnNativeClient:
                 s.close()
             except Exception:
                 pass
+
+        thread = self.thread
+        if thread and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=3.0)
+            if thread.is_alive():
+                self.signals.log.emit(
+                    "WARN: FRN-Thread reagierte beim Stoppen nicht innerhalb von 3 s."
+                )
 
     def request_tx(self, enabled: bool):
         if enabled:
@@ -585,6 +599,20 @@ class FrnNativeClient:
             f"Audio aktiv: GSM 06.10 WAV49. FRN-RX 8000 Hz -> "
             f"Lautsprecher {self.output_rate} Hz."
         )
+
+    def _wait_audio_workers(self):
+        """Wait until RX/TX audio workers no longer touch streams or libgsm."""
+        current = threading.current_thread()
+        for name in ("tx_thread", "play_thread"):
+            worker = getattr(self, name, None)
+            if worker and worker.is_alive() and worker is not current:
+                worker.join(timeout=2.0)
+                if worker.is_alive():
+                    self.signals.log.emit(
+                        f"WARN: {name} läuft nach 2 s noch; Audio-Ressourcen bleiben vorerst offen."
+                    )
+                    return False
+        return True
 
     def _close_audio(self):
         for stream_name in ("input_stream", "output_stream"):
@@ -1080,7 +1108,11 @@ class FrnNativeClient:
         finally:
             self.want_tx.clear()
             self.tx_granted_evt.clear()
-            self._close_audio()
+            # Important for Windows room changes: RX may still be inside
+            # decode/resample/output_stream.write. Wait for those workers before
+            # freeing PortAudio/libgsm to avoid a native crash.
+            if self._wait_audio_workers():
+                self._close_audio()
             s = self.sock
             self.sock = None
             if s:
