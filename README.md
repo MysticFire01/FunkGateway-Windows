@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.19 Portable Preview**
+**0.1.20 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.19\
+FunkGateway-Windows-0.1.20\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -199,3 +199,12 @@ class. `CL=2` always sends `BC=PC Only`, `CL=0` always sends
 `BC=Crosslink`, and `CL=1` uses the configured gateway band/channel string.
 This fixes logins rejected by servers that validate the consistency of CL and BC.
 The empty VX fallback is also corrected to `2014003`.
+
+
+## FRN PC city field compatibility
+
+From 0.1.20 PC-only clients (CL=2) format the FRN `CT` login field as
+`City - -`. If no city is configured, FunkGateway sends ` - -` instead of
+an empty CT field. This matches established FRN PC-client behavior and fixes
+`AL=BLOCK` responses from alternative servers that validate the CT field.
+After a successful login FunkGateway also sends `ST:0` after `RX0`.
