@@ -178,6 +178,9 @@ static void receiverLoop() {
         if (std::memcmp(hdr->magic, "FGT1", 4) != 0) continue;
 
         if (hdr->type == 1) {
+            // New audio means a fresh/continuing transmission. A stale restore
+            // from a previous bridge stop must never cancel this new TX.
+            g_pendingRestoreCT.store(false);
             size_t count = hdr->samples;
             size_t bytesNeeded = sizeof(PacketHeader) + count * sizeof(short);
             if (count == 0 || count > 1920 || bytesNeeded > static_cast<size_t>(got))
@@ -189,8 +192,12 @@ static void receiverLoop() {
             g_lastAudioTick.store(GetTickCount64());
             g_pendingEnableCT.store(true);
         } else if (hdr->type == 2) {
+            // Fresh START supersedes any pending restore from the prior session.
+            g_pendingRestoreCT.store(false);
             g_pendingEnableCT.store(true);
         } else if (hdr->type == 3) {
+            // STOP must not leave a delayed enable behind.
+            g_pendingEnableCT.store(false);
             clearRing();
             g_pendingRestoreCT.store(true);
         } else if (hdr->type == 4) {
