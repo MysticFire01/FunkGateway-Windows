@@ -9,6 +9,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -209,22 +210,41 @@ try {{
 """
     script.write_text(ps, encoding="utf-8-sig")
 
-    flags = 0
-    if sys.platform == "win32":
-        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
-            subprocess, "DETACHED_PROCESS", 0
+    # Leave a marker before we spawn the helper. If this exists but update.log
+    # does not, Windows started neither PowerShell nor the script.
+    marker = app_dir / "logs" / "update-launch.log"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    with marker.open("a", encoding="utf-8") as fh:
+        fh.write(
+            f"[{time.strftime('%Y-%m-%dT%H:%M:%S')}] Launch helper: {script}\\n"
         )
 
-    subprocess.Popen(
-        [
+    if sys.platform == "win32":
+        # Use cmd.exe START instead of DETACHED_PROCESS. START creates an
+        # independent process that survives the GUI/PyInstaller parent exit
+        # more reliably on older Windows 10 installations.
+        cmdline = subprocess.list2cmdline([
             "powershell.exe",
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
             "-File",
             str(script),
-        ],
-        cwd=str(helper_dir),
-        creationflags=flags,
-        close_fds=True,
-    )
+        ])
+        subprocess.Popen(
+            ["cmd.exe", "/d", "/s", "/c", "start", '""', "/b", cmdline],
+            cwd=str(helper_dir),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    else:
+        subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+            ],
+            cwd=str(helper_dir),
+        )
