@@ -9,7 +9,8 @@ from PySide6.QtCore import QTimer, QObject, QThread, Signal, Qt
 from PySide6.QtWidgets import (
     QMainWindow, QApplication, QMessageBox, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QComboBox, QTabWidget, QGroupBox, QFormLayout,
-    QCheckBox, QScrollArea, QPlainTextEdit, QLineEdit, QDoubleSpinBox, QSpinBox
+    QCheckBox, QScrollArea, QPlainTextEdit, QLineEdit, QDoubleSpinBox, QSpinBox,
+    QInputDialog
 )
 
 from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
@@ -385,7 +386,8 @@ class MainWindow(QMainWindow):
         self.gateway_ptt_backend.addItem("Seriell RTS / DTR", "serial")
 
         self.gateway_ptt_port = QComboBox()
-        self.gateway_ptt_port.setEditable(True)
+        self.gateway_ptt_port.setEditable(False)
+        self.gateway_ptt_port.currentIndexChanged.connect(self._gateway_ptt_port_changed)
         self.gateway_ptt_line = QComboBox()
         self.gateway_ptt_line.addItems(["RTS", "DTR"])
         self.gateway_ptt_invert = QCheckBox("PTT-Logik invertieren")
@@ -1016,17 +1018,59 @@ class MainWindow(QMainWindow):
         self.local_hotkey.set_hotkey(hotkey)
         self.frn_panel.set_ptt_hotkey_status("lokal aktiv · direkt/eventgesteuert")
 
-    def _refresh_gateway_ptt_ports(self):
-        current = self.gateway_ptt_port.currentText().strip() if hasattr(self, "gateway_ptt_port") else ""
-        self.gateway_ptt_port.clear()
-        for port in serial_ports():
-            self.gateway_ptt_port.addItem(port)
-        if current:
-            idx = self.gateway_ptt_port.findText(current)
+    def _gateway_ptt_port_changed(self, *_args):
+        if not hasattr(self, "gateway_ptt_port"):
+            return
+        if self.gateway_ptt_port.currentData() != "__manual__":
+            return
+        current = getattr(self, "_manual_gateway_ptt_port", "")
+        text, ok = QInputDialog.getText(
+            self,
+            "COM-Port manuell",
+            "COM-Port / serielle Schnittstelle eingeben:",
+            QLineEdit.EchoMode.Normal,
+            current,
+        )
+        if ok and text.strip():
+            self._manual_gateway_ptt_port = text.strip()
+            self._refresh_gateway_ptt_ports()
+            idx = self.gateway_ptt_port.findData("__manual_value__")
             if idx >= 0:
                 self.gateway_ptt_port.setCurrentIndex(idx)
+        else:
+            self._refresh_gateway_ptt_ports()
+
+    def _refresh_gateway_ptt_ports(self):
+        current = ""
+        if hasattr(self, "gateway_ptt_port") and self.gateway_ptt_port.count():
+            data = self.gateway_ptt_port.currentData()
+            if data == "__manual_value__":
+                current = getattr(self, "_manual_gateway_ptt_port", "")
+            elif isinstance(data, str) and data and not data.startswith("__"):
+                current = data
             else:
-                self.gateway_ptt_port.setEditText(current)
+                current = self.gateway_ptt_port.currentText().strip()
+
+        self.gateway_ptt_port.blockSignals(True)
+        self.gateway_ptt_port.clear()
+        for port in serial_ports():
+            self.gateway_ptt_port.addItem(port, port)
+
+        manual = getattr(self, "_manual_gateway_ptt_port", "")
+        if manual:
+            self.gateway_ptt_port.addItem(f"{manual} (manuell)", "__manual_value__")
+        self.gateway_ptt_port.addItem("Manuell …", "__manual__")
+
+        idx = -1
+        if current:
+            idx = self.gateway_ptt_port.findData(current)
+            if idx < 0 and manual and current == manual:
+                idx = self.gateway_ptt_port.findData("__manual_value__")
+        if idx < 0 and self.gateway_ptt_port.count() > 1:
+            idx = 0
+        if idx >= 0:
+            self.gateway_ptt_port.setCurrentIndex(idx)
+        self.gateway_ptt_port.blockSignals(False)
 
     def _make_gateway_ptt(self):
         backend = self.gateway_ptt_backend.currentData()
@@ -1037,8 +1081,15 @@ class MainWindow(QMainWindow):
                     "Bitte eine echte PTT-Schnittstelle wählen."
                 )
             return DryPTT()
+        port_data = self.gateway_ptt_port.currentData()
+        if port_data == "__manual_value__":
+            port_name = getattr(self, "_manual_gateway_ptt_port", "").strip()
+        else:
+            port_name = str(port_data or self.gateway_ptt_port.currentText()).strip()
+        if not port_name or port_name.startswith("__"):
+            raise RuntimeError("Bitte einen gültigen COM-Port auswählen.")
         return SerialPTT(
-            self.gateway_ptt_port.currentText().strip(),
+            port_name,
             self.gateway_ptt_line.currentText(),
             self.gateway_ptt_invert.isChecked(),
         )
@@ -2166,7 +2217,17 @@ class MainWindow(QMainWindow):
             idx = self.gateway_ptt_backend.findData(ptt_cfg.get("backend", "dry"))
             if idx >= 0:
                 self.gateway_ptt_backend.setCurrentIndex(idx)
-            self.gateway_ptt_port.setEditText(str(ptt_cfg.get("port", "")))
+            saved_port = str(ptt_cfg.get("port", "")).strip()
+            if saved_port:
+                idx = self.gateway_ptt_port.findData(saved_port)
+                if idx >= 0:
+                    self.gateway_ptt_port.setCurrentIndex(idx)
+                else:
+                    self._manual_gateway_ptt_port = saved_port
+                    self._refresh_gateway_ptt_ports()
+                    idx = self.gateway_ptt_port.findData("__manual_value__")
+                    if idx >= 0:
+                        self.gateway_ptt_port.setCurrentIndex(idx)
             idx = self.gateway_ptt_line.findText(str(ptt_cfg.get("line", "RTS")))
             if idx >= 0:
                 self.gateway_ptt_line.setCurrentIndex(idx)
@@ -2226,7 +2287,11 @@ class MainWindow(QMainWindow):
             },
             "ptt": {
                 "backend": self.gateway_ptt_backend.currentData(),
-                "port": self.gateway_ptt_port.currentText().strip(),
+                "port": (
+                    getattr(self, "_manual_gateway_ptt_port", "")
+                    if self.gateway_ptt_port.currentData() == "__manual_value__"
+                    else str(self.gateway_ptt_port.currentData() or "")
+                ),
                 "line": self.gateway_ptt_line.currentText(),
                 "invert": self.gateway_ptt_invert.isChecked(),
             },
