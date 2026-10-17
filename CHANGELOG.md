@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.5 – TeamSpeak 3 ClientQuery Live-Test
+
+- Linux-TeamSpeak-ClientQuery-Backend nach Windows portiert
+- automatische Suche nach clientquery.ini auch unter Windows AppData
+- TeamSpeak-Integration kann aktiviert/deaktiviert werden
+- ClientQuery-Testbutton
+- laufenden TeamSpeak-3-Client über 127.0.0.1:25639 erkennen
+- aktuellen Channel anzeigen
+- aktive Sprecher anzeigen
+- Status im FunkGateway-Dashboard
+- zunächst bewusst nur lesend; Channel-/Commander-/PTT-Aktionen folgen nach erfolgreichem Test
+
 ## 0.2.4 – Schnellere und robustere FRN-Hotkey-PTT
 
 - lokale PTT-Hotkeys reagieren jetzt vollständig ereignisgesteuert
