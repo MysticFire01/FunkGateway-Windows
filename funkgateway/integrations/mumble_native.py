@@ -102,9 +102,14 @@ class MumbleNativeGateway(QObject):
         self._capture_threshold = -35.0
         self._capture_hang_ms = 700
         self._capture_enabled = False
+        self._pc_ptt_enabled = False
+        self._pc_ptt_active = False
+        self._certfile = ""
+        self._keyfile = ""
 
         self._speaker_lock = threading.Lock()
         self._speaker_times = {}
+        self._speaker_modes = {}
 
     @property
     def connected(self):
@@ -146,7 +151,8 @@ class MumbleNativeGateway(QObject):
     def connect_async(
         self, host, port, nickname, password="", channel_path="",
         receive_to_radio=False, radio_input=None, radio_to_mumble=False,
-        threshold_dbfs=-35.0, hang_ms=700,
+        threshold_dbfs=-35.0, hang_ms=700, certfile="", keyfile="",
+        pc_ptt_enabled=False,
     ):
         self.disconnect()
         self._stop.clear()
@@ -155,6 +161,10 @@ class MumbleNativeGateway(QObject):
         self._capture_enabled = bool(radio_to_mumble)
         self._capture_threshold = float(threshold_dbfs)
         self._capture_hang_ms = max(0, int(hang_ms))
+        self._certfile = str(certfile or "")
+        self._keyfile = str(keyfile or "")
+        self._pc_ptt_enabled = bool(pc_ptt_enabled)
+        self._pc_ptt_active = False
 
         args = (
             str(host).strip(), int(port), str(nickname).strip(),
@@ -176,6 +186,8 @@ class MumbleNativeGateway(QObject):
             self.status.emit("Native Mumble: verbindet …")
             mumble = pymumble.Mumble(
                 host, nickname, port=int(port), password=password,
+                certfile=(self._certfile or None),
+                keyfile=(self._keyfile or None),
                 reconnect=True, stereo=False, debug=False,
             )
             self._mumble = mumble
@@ -213,7 +225,7 @@ class MumbleNativeGateway(QObject):
                         "Native Mumble: Channel-Pfad nicht gefunden: " + channel_path
                     )
 
-            if self._capture_enabled:
+            if self._capture_enabled or self._pc_ptt_enabled:
                 self._start_capture()
 
             while not self._stop.is_set():
@@ -247,6 +259,7 @@ class MumbleNativeGateway(QObject):
 
     def disconnect(self):
         self._stop.set()
+        self._pc_ptt_active = False
         self._stop_capture()
         mumble = self._mumble
         if mumble is not None:
@@ -275,6 +288,42 @@ class MumbleNativeGateway(QObject):
             self._start_capture()
         else:
             self._stop_capture()
+
+    def configure_pc_ptt(self, enabled, input_device=None):
+        self._pc_ptt_enabled = bool(enabled)
+        if input_device is not None:
+            self._capture_device = input_device
+        if self._connected and (self._capture_enabled or self._pc_ptt_enabled):
+            self._start_capture()
+        elif not self._capture_enabled:
+            self._stop_capture()
+
+    def set_pc_ptt(self, active):
+        active = bool(active) and self._pc_ptt_enabled and self._connected
+        self._pc_ptt_active = active
+        if active and not (self._capture_thread and self._capture_thread.is_alive()):
+            self._start_capture()
+        if not active and not self._capture_enabled and not self._pc_ptt_enabled:
+            self._stop_capture()
+
+    def register_current_user(self):
+        if not self._connected or self._mumble is None:
+            raise RuntimeError("Native Mumble-Verbindung ist nicht aktiv.")
+        if not self._certfile or not self._keyfile:
+            raise RuntimeError("Die Verbindung wurde ohne ausgewähltes Zertifikat aufgebaut.")
+        try:
+            self._mumble.users.myself.register()
+        except Exception as exc:
+            raise RuntimeError("Registrierung konnte nicht angefordert werden: " + str(exc)) from exc
+        return True
+
+    def current_user_id(self):
+        if not self._connected or self._mumble is None:
+            return None
+        try:
+            return int(self._prop(self._mumble.users.myself, "user_id", -1))
+        except Exception:
+            return None
 
     def channel_paths(self):
         mumble = self._mumble
@@ -344,8 +393,14 @@ class MumbleNativeGateway(QObject):
 
     def _sound_received(self, user, soundchunk):
         name = str(self._prop(user, "name", "Mumble") or "Mumble")
+        try:
+            target = int(getattr(soundchunk, "target", 0) or 0)
+        except Exception:
+            target = 0
+        speech_mode = "normal" if target == 0 else ("shout" if target == 1 else "whisper")
         with self._speaker_lock:
             self._speaker_times[name] = time.monotonic()
+            self._speaker_modes[name] = speech_mode
 
         if not self._receive_to_radio or self.tx_engine is None:
             return
@@ -380,9 +435,16 @@ class MumbleNativeGateway(QObject):
         now = time.monotonic()
         with self._speaker_lock:
             active = {
-                name for name, ts in self._speaker_times.items()
+                name: self._speaker_modes.get(name, "normal")
+                for name, ts in self._speaker_times.items()
                 if now - ts <= 0.8
             }
+
+        current_channel_id = None
+        try:
+            current_channel_id = int(self._prop(mumble.users.myself, "channel_id", -1))
+        except Exception:
+            pass
 
         result = []
         for _session, user in items:
@@ -399,8 +461,14 @@ class MumbleNativeGateway(QObject):
                 "name": name,
                 "channel": channel_path,
                 "talking": name in active,
+                "speech_mode": active.get(name, ""),
                 "muted": muted,
                 "deaf": deaf,
+                "current_channel": (
+                    current_channel_id is not None
+                    and channel_id is not None
+                    and int(channel_id) == int(current_channel_id)
+                ),
             })
         return sorted(result, key=lambda item: (item["channel"].lower(), item["name"].lower()))
 
@@ -416,6 +484,7 @@ class MumbleNativeGateway(QObject):
             stale = [name for name, ts in self._speaker_times.items() if now - ts > 0.8]
             for name in stale:
                 self._speaker_times.pop(name, None)
+                self._speaker_modes.pop(name, None)
             names = sorted(self._speaker_times)
         self.speakersChanged.emit(names)
         if not names:
@@ -491,7 +560,17 @@ class MumbleNativeGateway(QObject):
                         preroll_samples -= len(old) // 2
 
                     send_blocks = []
-                    if hot:
+                    pc_send = self._pc_ptt_enabled and self._pc_ptt_active
+                    if pc_send:
+                        if not active:
+                            active = True
+                            self.radioRxActivity.emit(True)
+                            send_blocks.extend(preroll)
+                            preroll.clear()
+                            preroll_samples = 0
+                        else:
+                            send_blocks.append(raw)
+                    elif self._capture_enabled and hot:
                         last_hot = now
                         if not active:
                             active = True
@@ -502,8 +581,12 @@ class MumbleNativeGateway(QObject):
                         else:
                             send_blocks.append(raw)
                     elif active:
-                        send_blocks.append(raw)
-                        if now - last_hot >= self._capture_hang_ms / 1000.0:
+                        if self._capture_enabled:
+                            send_blocks.append(raw)
+                            if now - last_hot >= self._capture_hang_ms / 1000.0:
+                                active = False
+                                self.radioRxActivity.emit(False)
+                        else:
                             active = False
                             self.radioRxActivity.emit(False)
 
