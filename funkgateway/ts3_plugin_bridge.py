@@ -31,10 +31,29 @@ class TeamSpeakPluginAudioBridge:
         self._sock = None
         self._sequence = 0
         self._device = None
+        self._active = threading.Event()
 
     @property
     def running(self):
         return bool(self._thread and self._thread.is_alive())
+
+    def set_active(self, active):
+        """Gate actual forwarding by detected radio RX activity."""
+        active = bool(active)
+        if active:
+            if not self._active.is_set():
+                self._active.set()
+                try:
+                    self._send(TYPE_START)
+                except Exception:
+                    pass
+        else:
+            if self._active.is_set():
+                self._active.clear()
+                try:
+                    self._send(TYPE_STOP)
+                except Exception:
+                    pass
 
     def _packet(self, packet_type, pcm=b""):
         samples = len(pcm) // 2
@@ -67,11 +86,13 @@ class TeamSpeakPluginAudioBridge:
             raise RuntimeError("Kein Funk-RX-Audioeingang gewählt.")
         self._device = input_device
         self._stop.clear()
+        self._active.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
     def stop(self):
         self._stop.set()
+        self._active.clear()
         sock = self._sock
         if sock is not None:
             try:
@@ -100,8 +121,7 @@ class TeamSpeakPluginAudioBridge:
             rate_state = None
             pending = bytearray()
 
-            self._send(TYPE_START)
-            self.log("TS3-Plugin-Audiobrücke gestartet.")
+            self.log("TS3-Plugin-Audiobrücke bereit.")
 
             with sd.RawInputStream(
                 samplerate=input_rate,
@@ -117,6 +137,11 @@ class TeamSpeakPluginAudioBridge:
                     if overflowed:
                         self.log("WARN: TS3-Plugin-Audiobrücke: Eingangsoverflow.")
 
+                    if not self._active.is_set():
+                        pending.clear()
+                        rate_state = None
+                        continue
+
                     if input_rate != TARGET_RATE:
                         converted, rate_state = audioop.ratecv(
                             raw, 2, 1, input_rate, TARGET_RATE, rate_state
@@ -126,7 +151,7 @@ class TeamSpeakPluginAudioBridge:
                     pending.extend(converted)
 
                     frame_bytes = FRAME_SAMPLES * 2
-                    while len(pending) >= frame_bytes:
+                    while len(pending) >= frame_bytes and self._active.is_set():
                         frame = bytes(pending[:frame_bytes])
                         del pending[:frame_bytes]
                         self._send(TYPE_AUDIO, frame)
