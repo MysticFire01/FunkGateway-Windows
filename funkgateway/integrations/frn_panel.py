@@ -1,6 +1,8 @@
 from __future__ import annotations
 import html
 import time
+import math
+from array import array
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QKeySequence
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QLineEdit,QPushButton,
@@ -89,7 +91,7 @@ class FrnPanel(QWidget):
 
     def __init__(self,parent=None):
         super().__init__(parent); self.client=None; self.rows=[]; self.filtered_rows=[]; self.direct_rooms=[]; self.talker_name=''; self.connected=False
-        self.tx_db=-120.0; self.rx_db=-120.0; self.ptt_active=False; self._pending_room=None; self._room_switch_active=False; self._room_switch_reconnect_scheduled=False; self.selected_server_row=None; self._last_auto_client_type=None; self._active_room_count=None; self._radio_auto_mode=False
+        self.tx_db=-120.0; self.rx_db=-120.0; self.ptt_active=False; self._last_rx_level_at=0.0; self._last_tx_level_at=0.0; self._pending_room=None; self._room_switch_active=False; self._room_switch_reconnect_scheduled=False; self.selected_server_row=None; self._last_auto_client_type=None; self._active_room_count=None; self._radio_auto_mode=False
         self._sm_auto_interval_ms=180000
         self._sm_backoff_steps_ms=(60000,120000,300000,600000)
         self._sm_backoff_index=0
@@ -100,6 +102,7 @@ class FrnPanel(QWidget):
         self._build(); self.refresh_audio_devices(); self._update_status()
         self._room_refresh_timer=QTimer(self); self._room_refresh_timer.setInterval(self._sm_auto_interval_ms); self._room_refresh_timer.timeout.connect(self._refresh_room_counts); self._room_refresh_timer.start()
         self._sm_status_timer=QTimer(self); self._sm_status_timer.setInterval(10000); self._sm_status_timer.timeout.connect(self._update_sm_guard_status); self._sm_status_timer.start()
+        self._meter_idle_timer=QTimer(self); self._meter_idle_timer.setInterval(250); self._meter_idle_timer.timeout.connect(self._reset_idle_meters); self._meter_idle_timer.start()
         self._update_sm_guard_status()
 
     @staticmethod
@@ -122,11 +125,11 @@ class FrnPanel(QWidget):
         self.callsign=QLineEdit(); self.description=QLineEdit('FunkGateway UI'); self.band=QLineEdit(); self.country=QLineEdit('Germany'); self.city=QLineEdit()
         self.client_type=QComboBox(); self.client_type.addItem('Automatisch nach FunkGateway-Modus','auto'); self.client_type.addItem('Gateway (CL=1)',1); self.client_type.addItem('PC only (CL=2)',2); self.client_type.addItem('Crosslink (CL=0)',0)
         self.protocol_version=QLineEdit('20261016'); self.protocol_version.setToolTip('FRN-Protokoll-/Clientversionskennung (VX). Keine Fremdsoftware wird imitiert.')
-        self.audio_enabled=QCheckBox('FRN-Audio aktiv'); self.audio_enabled.setChecked(True); self.audio_in=QComboBox(); self.audio_out=QComboBox(); rb=QPushButton('Audiogeräte neu laden'); rb.clicked.connect(self.refresh_audio_devices)
+        self.audio_enabled=QCheckBox('FRN-Audio aktiv'); self.audio_enabled.setChecked(True); self.audio_in=QComboBox(); self.audio_out=QComboBox(); rb=QPushButton('Audiogeräte neu laden'); rb.clicked.connect(self.refresh_audio_devices); test_out=QPushButton('Audio-Ausgang testen'); test_out.clicked.connect(self.test_audio_output)
         self.connect_btn=QPushButton('Verbinden'); self.disconnect_btn=QPushButton('Trennen'); self.disconnect_btn.setEnabled(False); self.connect_btn.clicked.connect(self.connect_frn); self.disconnect_btn.clicked.connect(self.disconnect_frn)
         br=QHBoxLayout(); br.addWidget(self.connect_btn); br.addWidget(self.disconnect_btn)
         compat_note=QLabel('Kompatibilität: Standardmäßig wird CL passend zum FunkGateway-Modus gewählt. Bei Servern mit Client-Filtern kann die legitime FRN-Klasse manuell gewählt werden.'); compat_note.setWordWrap(True)
-        for label,obj in [('SystemManager:',self.manager),('Server:',self.server),('Port:',self.port),('Raum:',self.room),('E-Mail:',self.email),('Passwort:',self.password),('',self.show_password),('',self.main_password_fallback),('Rufzeichen / Name:',self.callsign),('Beschreibung:',self.description),('Band / Kanal:',self.band),('Land:',self.country),('Stadt / Bereich:',self.city),('FRN Client-Typ (CL):',self.client_type),('FRN Version (VX):',self.protocol_version),('',compat_note),('',self.audio_enabled),('Audio Eingang:',self.audio_in),('Audio Ausgang:',self.audio_out),('',rb),('',br)]: f.addRow(label,obj)
+        for label,obj in [('SystemManager:',self.manager),('Server:',self.server),('Port:',self.port),('Raum:',self.room),('E-Mail:',self.email),('Passwort:',self.password),('',self.show_password),('',self.main_password_fallback),('Rufzeichen / Name:',self.callsign),('Beschreibung:',self.description),('Band / Kanal:',self.band),('Land:',self.country),('Stadt / Bereich:',self.city),('FRN Client-Typ (CL):',self.client_type),('FRN Version (VX):',self.protocol_version),('',compat_note),('',self.audio_enabled),('Audio Eingang:',self.audio_in),('Audio Ausgang:',self.audio_out),('',rb),('',test_out),('',br)]: f.addRow(label,obj)
         tabs.addTab(w,'Verbindung')
         # Servers & rooms
         w=QWidget(); vv=QVBoxLayout(w); top=QHBoxLayout(); self.explorer_manager=QComboBox(); self.explorer_manager.addItem('Alle','all'); self.explorer_manager.addItem('DE Allgemein / Original','de_orig'); self.explorer_manager.addItem('DE Alternativ','de_alt'); self.explorer_manager.addItem('Russland','ru'); load=QPushButton('Serverliste laden'); load.clicked.connect(self._manual_refresh_servers); self.explorer_manager.currentIndexChanged.connect(lambda *_:self._manual_refresh_servers()); self.explorer_status=QLabel('Noch nicht geladen'); top.addWidget(self.explorer_manager); top.addWidget(load); top.addWidget(self.explorer_status); vv.addLayout(top)
@@ -520,8 +523,36 @@ class FrnPanel(QWidget):
     def update_talker(self,name):
         self.talker_name=(name or '').strip(); self.talker.setText('FRN RX: '+(self.talker_name or '–')); self.talkerChanged.emit(self.talker_name); self.update_participants([{'name':self.participants.item(r,1).text() if self.participants.item(r,1) else '', 'type':self.participants.item(r,2).text() if self.participants.item(r,2) else '', 'band':self.participants.item(r,3).text() if self.participants.item(r,3) else '', 'country':self.participants.item(r,4).text() if self.participants.item(r,4) else '', 'city':self.participants.item(r,5).text() if self.participants.item(r,5) else ''} for r in range(self.participants.rowCount())])
     def _level(self,db,meter,label,prefix): meter.setValue(max(0,min(60,int(db+60)))); label.setText(f'{prefix}: {db:.1f} dBFS' if db>=-60 else f'{prefix}: < -60 dBFS')
-    def _tx_level(self,db): self.tx_db=float(db); self._level(self.tx_db,self.tx_meter,self.tx_label,'TX'); self.levelsChanged.emit(self.rx_db,self.tx_db)
-    def _rx_level(self,db): self.rx_db=float(db); self._level(self.rx_db,self.rx_meter,self.rx_label,'RX'); self.levelsChanged.emit(self.rx_db,self.tx_db)
+    def _tx_level(self,db):
+        self.tx_db=float(db); self._last_tx_level_at=time.monotonic(); self._level(self.tx_db,self.tx_meter,self.tx_label,'TX'); self.levelsChanged.emit(self.rx_db,self.tx_db)
+    def _rx_level(self,db):
+        self.rx_db=float(db); self._last_rx_level_at=time.monotonic(); self._level(self.rx_db,self.rx_meter,self.rx_label,'RX'); self.levelsChanged.emit(self.rx_db,self.tx_db)
+    def _reset_idle_meters(self):
+        now=time.monotonic(); changed=False
+        if self.rx_db>-120.0 and now-self._last_rx_level_at>0.8:
+            self.rx_db=-120.0; self._level(self.rx_db,self.rx_meter,self.rx_label,'RX'); changed=True
+        if self.tx_db>-120.0 and now-self._last_tx_level_at>0.8:
+            self.tx_db=-120.0; self._level(self.tx_db,self.tx_meter,self.tx_label,'TX'); changed=True
+        if changed:self.levelsChanged.emit(self.rx_db,self.tx_db)
+
+    def test_audio_output(self):
+        if sd is None:
+            QMessageBox.warning(self,'Audio-Test','sounddevice / PortAudio ist nicht verfügbar.')
+            return
+        device=self.audio_out.currentData()
+        try:
+            info=sd.query_devices(device,'output')
+            rate=int(round(float(info.get('default_samplerate') or 48000)))
+            if rate<8000: rate=48000
+            duration=0.45; freq=660.0; amp=int(32767*0.16)
+            samples=array('h',(int(amp*math.sin(2.0*math.pi*freq*n/rate)) for n in range(int(rate*duration))))
+            self._log(f'Audio-Test: Ausgang {info.get("name","?")} mit {rate} Hz.')
+            with sd.RawOutputStream(samplerate=rate,channels=1,dtype='int16',device=device,latency='low') as stream:
+                stream.write(samples.tobytes())
+            self._log('Audio-Test: Testton ausgegeben.')
+        except Exception as exc:
+            self._log('FEHLER Audio-Test: '+str(exc))
+            QMessageBox.warning(self,'Audio-Test','Testton fehlgeschlagen:\n\n'+str(exc))
     def _update_status(self):
         state='verbunden' if self.connected else 'getrennt'
         if self.connected and self.client:
