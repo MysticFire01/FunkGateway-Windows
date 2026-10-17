@@ -1106,6 +1106,11 @@ class FrnNativeClient:
                 self.signals.error.emit(str(exc))
                 self._set_state("ERROR")
         finally:
+            # Any exit from the network thread (normal stop, BLOCK/login error,
+            # remote disconnect, protocol error) must also stop RX/TX workers.
+            # Without this, play_thread can remain alive forever on an empty
+            # queue after a failed login.
+            self.stop_evt.set()
             self.want_tx.clear()
             self.tx_granted_evt.clear()
             # Important for Windows room changes: RX may still be inside
