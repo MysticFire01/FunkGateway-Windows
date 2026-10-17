@@ -1,0 +1,110 @@
+name: Build FunkGateway Windows 0.1.5
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release-0.1.5.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Install and validate Windows libgsm WAV49
+        shell: pwsh
+        run: |
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Sy --noconfirm mingw-w64-x86_64-gsm"
+          Copy-Item "C:\msys64\mingw64\bin\libgsm.dll" "libgsm.dll"
+          Copy-Item "C:\msys64\mingw64\share\licenses\gsm\license.txt" "LIBGSM-LICENSE.txt"
+          python -c "import ctypes; lib=ctypes.CDLL(r'libgsm.dll'); lib.gsm_create.restype=ctypes.c_void_p; lib.gsm_option.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.POINTER(ctypes.c_int)]; lib.gsm_option.restype=ctypes.c_int; lib.gsm_destroy.argtypes=[ctypes.c_void_p]; h=lib.gsm_create(); assert h; one=ctypes.c_int(1); rc=lib.gsm_option(h,4,ctypes.byref(one)); lib.gsm_destroy(h); assert rc != -1, 'GSM_OPT_WAV49 unsupported'; print('libgsm WAV49 OK')"
+
+      - name: Validate Python source
+        shell: pwsh
+        run: |
+          python -m compileall -q funkgateway main.py
+          python -c "import funkgateway; import funkgateway.integrations.frn_native; import funkgateway.integrations.frn_panel; print('Imports OK')"
+
+      - name: Build EXE
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name "FunkGateway-Windows" main.py
+
+      - name: Build release ZIP and checksums
+        shell: pwsh
+        run: |
+          $version = "0.1.5"
+          $stage = "FunkGateway-Windows-$version"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "dist\FunkGateway-Windows.exe" "$stage\FunkGateway-Windows.exe"
+          Copy-Item "libgsm.dll" "$stage\libgsm.dll"
+          Copy-Item "LIBGSM-LICENSE.txt" "$stage\LIBGSM-LICENSE.txt"
+          Copy-Item "README.md" "$stage\README.md"
+          Copy-Item "CHANGELOG.md" "$stage\CHANGELOG.md"
+          Copy-Item "LICENSE" "$stage\LICENSE"
+          $zip = "FunkGateway-Windows-$version-x64.zip"
+          Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
+          $exeHash = (Get-FileHash "$stage\FunkGateway-Windows.exe" -Algorithm SHA256).Hash.ToLower()
+          $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$exeHash  FunkGateway-Windows.exe" | Set-Content "FunkGateway-Windows-$version-EXE.sha256"
+          "$zipHash  $zip" | Set-Content "$zip.sha256"
+
+      - name: Prepare release notes
+        shell: pwsh
+        run: |
+          @'
+          # FunkGateway Windows 0.1.5 Preview
+
+          Portable Windows-Vorschau mit integriertem GSM-06.10/WAV49-Codec.
+
+          ## Enthalten
+          - Windows 10/11 x64
+          - native FRN-Verbindung
+          - FRN-SystemManager, Server-, Raum- und Teilnehmerlisten
+          - Windows-Audiogeräte über sounddevice / PortAudio
+          - lokaler und systemweiter FRN-PTT-Hotkey
+          - Hold-PTT und Latch-PTT
+          - portable Konfiguration im Unterordner config neben der EXE
+          - Logs im Unterordner logs neben der EXE
+          - keine FunkGateway-Konfiguration unter %APPDATA%
+          - Release-ZIP enthält keine config.json; sie wird nur vom Programm erzeugt
+          - config- und logs-Ordner werden beim ersten Programmstart automatisch angelegt\n          - integrierter Selbstupdater ab 0.1.5
+
+          ## Wichtig zu FRN-Audio
+          FRN-Audio benötigt GSM 06.10 WAV49. Diese erste Preview sucht unter
+          Windows nach gsm.dll/libgsm.dll. Solange keine passende DLL mitgeliefert
+          wird, bitte "FRN-Audio aktiv" ausschalten. Verbindung, Server/Räume,
+          Teilnehmer und Hotkeys können trotzdem getestet werden.
+
+          Dies ist eine frühe Preview und noch kein Ersatz für die Linux-Version.
+          '@ | Set-Content RELEASE_NOTES.md
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if (gh release view "v0.1.5" 2>$null) {
+            Write-Host "Release v0.1.5 existiert bereits."
+            exit 0
+          }
+          gh release create "v0.1.5" "FunkGateway-Windows-0.1.5-x64.zip" "FunkGateway-Windows-0.1.5-x64.zip.sha256" "FunkGateway-Windows-0.1.5-EXE.sha256" --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "FunkGateway Windows 0.1.5 Preview" --notes-file RELEASE_NOTES.md
