@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.39 – Mumble Benutzer direkt im Channelbaum
+
+- Benutzer werden wie im normalen Mumble direkt unter ihrem Channel angezeigt
+- farbiges Mundsymbol sitzt links vor dem Benutzernamen
+- eigener Benutzer sendet weiterhin orange
+- andere Sprecher rot, Whisper blau, schweigende Benutzer grün
+- Nutzerzahl je Channel wird live aus der Teilnehmerliste aktualisiert
+- Channel-Hierarchie und Auf-/Zuklappzustand bleiben bei Live-Updates erhalten
+- Doppelklick auf einen Channel wechselt direkt hinein
+- Doppelklick auf einen Benutzer löst keinen Channelwechsel aus
+- Mute/Deaf-Zustände bleiben als Tooltip am Benutzer sichtbar
+
 ## 0.2.38 – Mumble-Empfang standardmäßig hörbar
 
 - PC-User hört empfangenes Mumble-Audio nach dem Verbinden automatisch
