@@ -658,3 +658,10 @@ full package hook instead of manually placing only one guessed native module.
 The Mumble public server browser also reports whether the data came from the
 official `publist.mumble.info` service or from the much smaller fallback list.
 The official request now uses the current Mumble 1.5.939 release identifier.
+
+
+## Certificate runtime pin 0.2.44
+
+The Windows build pins cryptography to 43.0.3. The packaged executable is tested
+after PyInstaller with `--self-test-cert`; release creation is blocked unless
+the frozen executable can generate and parse an X.509 certificate successfully.
