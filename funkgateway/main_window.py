@@ -152,6 +152,7 @@ class MainWindow(QMainWindow):
         self._mumble_current_channel_name = ""
         self._mumble_current_speakers = []
         self._mumble_favorites = [dict(item) for item in DEFAULT_MUMBLE_FAVORITES]
+        self._mumble_user_volumes = {}
         self.ts_last_status = None
         self.ts_last_speakers = []
         self.ts_last_channel = None
@@ -780,6 +781,11 @@ class MainWindow(QMainWindow):
         self.tx_audio_hang.setSingleStep(50)
         self.tx_audio_hang.setValue(450)
         self.tx_audio_hang.setSuffix(" ms")
+        self.audio_tx_volume = QSpinBox()
+        self.audio_tx_volume.setRange(0, 200)
+        self.audio_tx_volume.setValue(100)
+        self.audio_tx_volume.setSuffix(" %")
+        self.audio_tx_volume.valueChanged.connect(self._audio_tx_volume_changed)
 
         self.tx_audio_level_label = QLabel("TX-Pegel: —")
         self.tx_audio_source_label = QLabel("Quelle: —")
@@ -794,6 +800,7 @@ class MainWindow(QMainWindow):
         f.addRow("Quellentyp:", self.tx_audio_source_mode)
         f.addRow("Audioeingang:", self.tx_audio_input)
         f.addRow("Funk-TX Ausgang:", self.tx_audio_output)
+        f.addRow("Funk-TX Lautstärke:", self.audio_tx_volume)
         f.addRow("PTT-Schwellwert:", self.tx_audio_threshold)
         f.addRow("PTT-Nachlauf:", self.tx_audio_hang)
         f.addRow("", refresh)
@@ -1671,6 +1678,20 @@ class MainWindow(QMainWindow):
 
         self.mumble_local_playback = QCheckBox("Mumble-Empfang stummschalten")
         self.mumble_local_playback.setChecked(False)
+        self.mumble_playback_volume = QSpinBox()
+        self.mumble_playback_volume.setRange(0, 200)
+        self.mumble_playback_volume.setValue(100)
+        self.mumble_playback_volume.setSuffix(" %")
+        self.mumble_playback_volume.valueChanged.connect(self._mumble_playback_volume_changed)
+        self.mumble_user_volume_select = QComboBox()
+        self.mumble_user_volume_select.addItem("Benutzer auswählen …", None)
+        self.mumble_user_volume_select.currentIndexChanged.connect(self._mumble_user_volume_selected)
+        self.mumble_user_volume = QSpinBox()
+        self.mumble_user_volume.setRange(0, 200)
+        self.mumble_user_volume.setValue(100)
+        self.mumble_user_volume.setSuffix(" %")
+        self.mumble_user_volume.setEnabled(False)
+        self.mumble_user_volume.valueChanged.connect(self._mumble_user_volume_changed)
         self.mumble_output = QComboBox()
         self.mumble_output.setMinimumWidth(300)
         self.mumble_output_label = QLabel("Audio-Ausgabe / Lautsprecher:")
@@ -1718,6 +1739,9 @@ class MainWindow(QMainWindow):
         af.addRow(self.mumble_input_label, self.mumble_rx_input)
         af.addRow(self.mumble_output_label, self.mumble_output)
         af.addRow("", self.mumble_local_playback)
+        af.addRow("Mumble Empfang gesamt:", self.mumble_playback_volume)
+        af.addRow("Teilnehmer-Lautstärke:", self.mumble_user_volume_select)
+        af.addRow("Gewählter Teilnehmer:", self.mumble_user_volume)
         af.addRow("", self.mumble_rx_refresh_btn)
         af.addRow("RX-Schwellwert:", self.mumble_rx_threshold)
         af.addRow("RX-Nachlauf:", self.mumble_rx_hang)
@@ -3006,6 +3030,7 @@ class MainWindow(QMainWindow):
 
     def _mumble_native_participants_changed(self, participants):
         rows = list(participants or [])
+        self._refresh_mumble_user_volume_list(rows)
         self._update_mumble_chat_targets(rows)
         for self_row in rows:
             if self_row.get("is_self"):
