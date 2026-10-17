@@ -48,6 +48,7 @@ class AudioTxEngine(QObject):
         self._active = False
         self._last_hot = 0.0
         self._preroll_ms = 80
+        self._output_gain = 1.0
 
     @property
     def running(self):
@@ -84,6 +85,10 @@ class AudioTxEngine(QObject):
         self._release_ptt()
         self._drain_queue()
         self._ptt = None
+
+    def set_output_volume(self, percent):
+        """Radio TX output only; PTT threshold uses original signal level."""
+        self._output_gain = max(0.0, min(2.0, float(percent) / 100.0))
 
     def push_pcm(self, pcm, sample_rate, channels=1, source="Audio"):
         if not self.running or not pcm:
@@ -218,8 +223,10 @@ class AudioTxEngine(QObject):
 
                 # Keep a short pre-roll so the first syllable is not clipped
                 # while the serial PTT line is being asserted.
-                preroll.append(raw)
-                preroll_samples += len(raw) // 2
+                gain = self._output_gain
+                output_pcm = raw if gain == 1.0 else audioop.mul(raw, 2, gain)
+                preroll.append(output_pcm)
+                preroll_samples += len(output_pcm) // 2
                 while preroll and preroll_samples > max_preroll_samples:
                     old = preroll.popleft()
                     preroll_samples -= len(old) // 2
@@ -233,10 +240,10 @@ class AudioTxEngine(QObject):
                                 out.write(preroll.popleft())
                             preroll_samples = 0
                     elif out is not None:
-                        out.write(raw)
+                        out.write(output_pcm)
                 elif self._active:
                     if out is not None:
-                        out.write(raw)
+                        out.write(output_pcm)
                     if now - self._last_hot >= self._hang_ms / 1000.0:
                         self._set_ptt(False)
                 # Below threshold while idle stays only in pre-roll.
