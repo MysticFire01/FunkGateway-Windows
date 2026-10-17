@@ -1140,6 +1140,10 @@ class MainWindow(QMainWindow):
     def _ts_audio_bridge_enabled_changed(self, enabled):
         # The forwarding checkbox is a live control. RX detection is separate.
         if not enabled:
+            try:
+                self.ts_plugin_bridge.set_active(False)
+            except Exception:
+                pass
             self._stop_radio_audio_bridge()
             return
         if self.gateway_started and self._mode() in ("gateway", "radio_parrot"):
@@ -1162,7 +1166,8 @@ class MainWindow(QMainWindow):
                     self.ts_audio_bridge_status.setText("TS3-Plugin: nicht erreichbar")
                     return
                 self.ts_plugin_bridge.start(inp)
-                self.ts_audio_bridge_status.setText("TS3-Plugin-Brücke: AKTIV")
+                self.ts_plugin_bridge.set_active(bool(self.radio_rx_active))
+                self.ts_audio_bridge_status.setText("TS3-Plugin-Brücke: bereit")
             else:
                 out = self.ts_audio_output.currentData()
                 if out is None:
@@ -1233,6 +1238,24 @@ class MainWindow(QMainWindow):
             self.ts_rx_state_label.setText(
                 "Funk-RX: AKTIV" if active else "Funk-RX: frei"
             )
+
+        # Audio forwarding follows real Funk-RX activity, independently from
+        # Channel Commander. The bridge may stay open/ready, but it sends no
+        # PCM while RX is free.
+        if (
+            hasattr(self, "ts_audio_bridge_enabled")
+            and self.ts_audio_bridge_enabled.isChecked()
+            and (self.ts_audio_bridge_mode.currentData() or "plugin") == "plugin"
+        ):
+            try:
+                self.ts_plugin_bridge.set_active(bool(active))
+                self.ts_audio_bridge_status.setText(
+                    "TS3-Plugin-Brücke: SENDEN"
+                    if active else "TS3-Plugin-Brücke: bereit"
+                )
+            except Exception as exc:
+                self._radio_bridge_error(str(exc))
+
         if (
             self.ts_enabled.isChecked()
             and self.ts_commander_auto.isChecked()
