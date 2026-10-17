@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.46 – Release-Version wird jetzt aus der fertigen EXE geprüft
+
+- behebt den Versionsfehler des Releases 0.2.45:
+  - Release/ZIP hieß 0.2.45
+  - der tatsächlich gebaute Quellstand enthielt noch VERSION 0.2.44
+  - deshalb startete nach dem Update wieder 0.2.44
+- neue EXE-Funktion --version-file schreibt die intern eingebaute Version in eine Prüfdatei
+- GitHub Actions startet nach PyInstaller die fertige EXE und liest deren Version aus
+- der Build bricht ab, wenn die fertige EXE nicht exakt 0.2.46 meldet
+- erst danach darf ZIP/Release erzeugt werden
+- enthält zusätzlich die bisherigen Mumble-Zertifikats-, Serverlisten-, PTT- und UI-Fixes aus dem aktuellen main-Stand
+
 ## 0.2.45 – Zertifikats-Release wirklich veröffentlichen
 
 - behebt den 0.2.44-Workflowfehler nach erfolgreichem Zertifikats-Selbsttest
