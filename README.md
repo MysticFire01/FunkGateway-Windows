@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.3 Portable Preview**
+**0.1.4 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.3\
+FunkGateway-Windows-0.1.4\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -72,3 +72,10 @@ The updater downloads the latest Windows x64 release from GitHub, verifies its
 SHA256 digest, closes the running EXE, updates the portable program files and
 starts FunkGateway again. The local `config` and `logs` directories are
 explicitly excluded from replacement.
+
+
+## Bundled HTTPS certificate store
+
+The portable updater uses a bundled `certifi` CA certificate store for HTTPS
+connections to GitHub. Certificate verification remains enabled; the updater
+does not use insecure TLS bypasses.
