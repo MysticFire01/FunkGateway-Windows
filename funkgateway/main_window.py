@@ -116,6 +116,7 @@ class MainWindow(QMainWindow):
         self._mumble_public_worker = None
         self._mumble_public_servers = []
         self._mumble_public_source = ""
+        self._mumble_public_source_detail = ""
         self._mumble_pc_ptt_active = False
         self._mumble_favorites = [dict(item) for item in DEFAULT_MUMBLE_FAVORITES]
         self.ts_last_status = None
@@ -1412,12 +1413,21 @@ class MainWindow(QMainWindow):
         worker.error.connect(self._mumble_public_error)
         worker.progress.connect(self._mumble_public_progress)
         worker.sourceChanged.connect(self._mumble_public_source_changed)
+        worker.sourceDetail.connect(self._mumble_public_source_detail_changed)
         worker.loaded.connect(thread.quit)
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(self._mumble_public_finished)
         thread.start()
+
+    def _mumble_public_source_detail_changed(self, detail):
+        self._mumble_public_source_detail = str(detail or "")
+        if self._mumble_public_source == "legacy-fallback":
+            self.mumble_public_status.setToolTip(
+                "Offizielle Liste fehlgeschlagen:\n"
+                + self._mumble_public_source_detail
+            )
 
     def _mumble_public_source_changed(self, source, total):
         self._mumble_public_source = str(source or "")
@@ -1427,9 +1437,13 @@ class MainWindow(QMainWindow):
             )
             self.mumble_public_status.setStyleSheet("")
         else:
+            detail = (
+                " · " + self._mumble_public_source_detail
+                if self._mumble_public_source_detail else ""
+            )
             self.mumble_public_status.setText(
                 f"ACHTUNG: nur Fallback-Liste · {int(total)} Server "
-                "(bekannt auf ca. 50 Einträge begrenzt)"
+                "(bekannt auf ca. 50 Einträge begrenzt)" + detail
             )
             self.mumble_public_status.setStyleSheet(
                 "color:#F2994A;font-weight:bold;"
@@ -1577,6 +1591,15 @@ class MainWindow(QMainWindow):
             + f" · {source_text}"
         )
         if self._mumble_public_source == "legacy-fallback":
+            if self._mumble_public_source_detail:
+                self.mumble_public_status.setText(
+                    self.mumble_public_status.text()
+                    + " · Grund: " + self._mumble_public_source_detail
+                )
+                self.mumble_public_status.setToolTip(
+                    "Offizielle Liste fehlgeschlagen:\n"
+                    + self._mumble_public_source_detail
+                )
             self.mumble_public_status.setStyleSheet(
                 "color:#F2994A;font-weight:bold;"
             )
