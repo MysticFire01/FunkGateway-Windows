@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1 Portable Preview
+
+- Windows-Version vollständig auf portablen Datenpfad umgestellt
+- Konfiguration liegt neben der EXE unter `config\\config.json`
+- Logs liegen neben der EXE unter `logs\\gateway.log`
+- kein FunkGateway-Konfigurationsordner mehr unter `%APPDATA%`
+- geeignet zum Entpacken und Starten direkt von externer HDD/SSD oder USB-Laufwerk
+- Entwicklungsstart aus dem Quellordner verwendet ebenfalls lokale Projektpfade
+- FRN-, Hotkey- und Audio-Preview-Funktionen aus 0.1.0 bleiben erhalten
+
 ## 0.1.0 Windows Preview
 
 - erstes separates Windows-Repository
