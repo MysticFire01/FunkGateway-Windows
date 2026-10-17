@@ -325,6 +325,54 @@ class MumbleNativeGateway(QObject):
         except Exception:
             return None
 
+    def channel_snapshot(self):
+        """Return channels with hierarchy and live user counts."""
+        mumble = self._mumble
+        if mumble is None or not self._connected:
+            return []
+        try:
+            channel_items = list(getattr(mumble, "channels", {}).items())
+            user_items = list(getattr(mumble, "users", {}).items())
+        except Exception:
+            return []
+
+        counts = {}
+        current_id = None
+        try:
+            current_id = int(self._prop(mumble.users.myself, "channel_id", -1))
+        except Exception:
+            pass
+
+        for _session, user in user_items:
+            cid = self._prop(user, "channel_id", None)
+            if cid is None:
+                cid = self._prop(user, "channel", None)
+            try:
+                cid = int(cid)
+            except Exception:
+                continue
+            counts[cid] = counts.get(cid, 0) + 1
+
+        result = []
+        for cid, channel in channel_items:
+            try:
+                cid_i = int(cid)
+            except Exception:
+                continue
+            parent = self._prop(channel, "parent", None)
+            try:
+                parent_i = int(parent) if parent is not None else None
+            except Exception:
+                parent_i = None
+            result.append({
+                "id": cid_i,
+                "parent": parent_i,
+                "name": str(self._prop(channel, "name", "") or f"Channel {cid_i}"),
+                "users": int(counts.get(cid_i, 0)),
+                "current": current_id is not None and cid_i == current_id,
+            })
+        return result
+
     def channel_paths(self):
         mumble = self._mumble
         if mumble is None or not self._connected:
