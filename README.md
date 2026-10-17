@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.10 Portable Preview**
+**0.1.11 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.10\
+FunkGateway-Windows-0.1.11\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -124,3 +124,11 @@ Windows 10 systems. The PowerShell helper itself continues to write
 From 0.1.10 the Windows build explicitly includes `funkgateway.updates` as a
 PyInstaller hidden import. The build also validates that the updater module can
 be imported before packaging.
+
+
+## Windows speaker resampling
+
+From 0.1.11, decoded FRN RX audio remains 8 kHz internally but the selected
+Windows output device is opened at its native/default sample rate (commonly
+44.1 or 48 kHz). FunkGateway resamples the FRN PCM before playback, avoiding
+silent output on Windows drivers that accept but do not properly render 8 kHz.
