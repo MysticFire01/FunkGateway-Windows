@@ -433,3 +433,12 @@ the serial ports detected by Windows.
 The gateway PTT port selector is now a real non-editable combo box populated
 with detected Windows serial ports. A separate “Manuell …” entry opens a text
 dialog for unusual/custom port names.
+
+
+## Windows Mumble foundation 0.2.24
+
+The Mumble integration now detects the running Windows client and its executable
+version. For legacy clients such as Mumble 1.2.9, FunkGateway uses Mumble's
+official mumble:// URL mechanism for server/channel navigation. Clients from
+Mumble 1.4 onward are marked as candidates for the modern general-purpose plugin
+API, which will be layered on top later.
