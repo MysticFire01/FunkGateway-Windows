@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.18 – Drei Oberflächenstufen
+
+- neue Auswahl: Vereinfachte Oberfläche, Volle Oberfläche, Entwickleroptionen
+- Auswahl wird in der portablen Konfiguration gespeichert
+- alle vier Betriebsarten bleiben in jeder Oberflächenstufe erhalten
+- Vereinfachte Oberfläche blendet Feinabstimmung und Diagnose aus
+- Volle Oberfläche zeigt alle regulären produktiven Funktionen
+- Entwickleroptionen ergänzen reine Simulationshilfen
+- Test-PTT/Dry-PTT nur noch in Entwickleroptionen sichtbar und nutzbar
+- „Kein Audioausgang (nur PTT-Test)“ nur noch in Entwickleroptionen
+- WASAPI-Systemaudio bleibt eine reguläre Funktion in Voll/Entwickler, da es produktiv für VLC/Soundboard/Browser genutzt werden kann
+- bestehende Installationen starten nach dem Update standardmäßig mit Volle Oberfläche
+
 ## 0.2.17 – TeamSpeak-Prozess zuverlässig beenden
 
 - zuverlässigere Erkennung laufender TeamSpeak-3-Prozesse über PowerShell/Get-Process
