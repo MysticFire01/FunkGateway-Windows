@@ -310,7 +310,7 @@ class MainWindow(QMainWindow):
         self.frn_panel = FrnPanel(self)
         self.frn_panel.statusChanged.connect(lambda _s: self._update_live_status())
         self.frn_panel.connectedChanged.connect(self._frn_connected_changed)
-        self.frn_panel.pttStateChanged.connect(lambda _s: self._update_live_status())
+        self.frn_panel.pttStateChanged.connect(self._frn_ptt_state_changed)
         self.frn_panel.pttHotkeyChanged.connect(self._configure_hotkey)
         self.integration_tabs.addTab(self.frn_panel, "FRN")
 
@@ -448,6 +448,8 @@ class MainWindow(QMainWindow):
             f"background:{color}; color:{tab_text}; border-color:{color};"
             "}"
         )
+        self._update_frn_ptt_button_style()
+
         for m, button in self.mode_cards.items():
             if m == mode:
                 c = MODE_COLORS[m] if self.mode_colors.isChecked() else palette.get("accent", "#2F80ED")
@@ -679,9 +681,37 @@ class MainWindow(QMainWindow):
         self.status_ptt.setText("PTT: NOT-AUS ausgelöst")
         self._update_live_status()
 
+    def _frn_ptt_state_changed(self, active):
+        self._update_frn_ptt_button_style(bool(active))
+        self._update_live_status()
+
+    def _update_frn_ptt_button_style(self, active=None):
+        if not hasattr(self, "frn_ptt_btn"):
+            return
+        if active is None:
+            active = bool(getattr(self.frn_panel, "ptt_active", False)) if hasattr(self, "frn_panel") else False
+
+        # In PC-user mode the normal visual identity is blue. During an actual
+        # FRN transmission the PTT button deliberately switches to a strong red
+        # so TX is unmistakable, regardless of mouse button, local hotkey,
+        # global hotkey or latch mode.
+        if self._mode() == "pc" and active:
+            self.frn_ptt_btn.setStyleSheet(
+                "QPushButton {"
+                "background:#E60000; color:#FFFFFF; border:2px solid #FF5A5A; "
+                "font-weight:800; border-radius:7px; padding:6px 10px;"
+                "}"
+                "QPushButton:hover { background:#FF0000; border-color:#FFFFFF; }"
+                "QPushButton:pressed { background:#B80000; }"
+            )
+        else:
+            # Clear the local override so the normal theme/mode styling applies.
+            self.frn_ptt_btn.setStyleSheet("")
+
     def _frn_connected_changed(self, yes):
         self.status_frn.setText("FRN: verbunden" if yes else "FRN: getrennt")
         self._configure_hotkey()
+        self._update_frn_ptt_button_style(False if not yes else None)
         self._update_live_status()
 
     def _update_live_status(self):
