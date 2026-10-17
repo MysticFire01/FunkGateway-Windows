@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.45 – Zertifikats-Release wirklich veröffentlichen
+
+- behebt den 0.2.44-Workflowfehler nach erfolgreichem Zertifikats-Selbsttest
+- der gepackte EXE-Selbsttest lieferte bereits ok=true, wurde aber wegen eines irreführenden GUI-EXE-Exitcodes als Fehler gewertet
+- Validierung prüft jetzt den JSON-Inhalt des Zertifikats-Selbsttests
+- nur wenn ok=true fehlt, bricht der Build ab
+- neuer eindeutiger Release-Tag verhindert, dass ein alter fehlerhafter 0.2.44-Build weiterverwendet wird
+- enthält weiterhin vollständige offizielle Mumble-Serverliste mit sichtbarer Quellenanzeige
+- enthält Zertifikatsmodul-Diagnose direkt in der Oberfläche
+
 ## 0.2.45 – Zertifikats-Selbsttest im Windows-Build korrigiert
 
 - der fertige EXE-Selbsttest lieferte bereits erfolgreich `ok: true`
