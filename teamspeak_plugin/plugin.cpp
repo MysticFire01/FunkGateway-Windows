@@ -289,7 +289,14 @@ void ts3plugin_onConnectStatusChangeEvent(
         g_activeServer.store(serverConnectionHandlerID);
     } else if (g_activeServer.load() == serverConnectionHandlerID &&
                newStatus == STATUS_DISCONNECTED) {
-        g_pendingRestoreCT.store(true);
+        // The old TS connection no longer exists, so never carry its talk
+        // state into a later reconnect/server tab.
+        g_pendingEnableCT.store(false);
+        g_pendingRestoreCT.store(false);
+        clearRing();
+        g_lastAudioTick.store(0);
+        g_previousTalkState = TALK_INVALID;
+        g_ctActive = false;
         g_activeServer.store(0);
     }
 }
