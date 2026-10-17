@@ -328,3 +328,11 @@ The Funk-RX-to-TeamSpeak checkbox is now a live runtime control. Disabling it
 immediately stops the active plugin/device bridge while radio RX detection keeps
 running independently. Re-enabling it starts forwarding again while the gateway
 is running.
+
+
+## RX-gated TeamSpeak bridge 0.2.13
+
+The native TeamSpeak bridge no longer forwards the selected radio input
+continuously. It stays ready while the gateway is running and sends PCM only
+while the independent radio RX detector reports active reception. Commander
+automation remains a separate option.
