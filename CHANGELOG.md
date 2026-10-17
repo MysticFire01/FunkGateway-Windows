@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.12 – TeamSpeak-Audioweiterleitung live schaltbar
+
+- „Funk-RX Audio nach TeamSpeak weiterleiten“ wirkt jetzt sofort
+- Haken AUS stoppt die laufende TS3-Plugin-/Geräte-Audiobrücke unmittelbar
+- Haken EIN startet die Audiobrücke bei laufendem Gateway unmittelbar
+- Funk-RX-Erkennung bleibt davon unabhängig aktiv
+- Wechsel des Audio-Wegs startet die aktive Brücke sauber neu
+
 ## 0.2.11 – Funk-RX unabhängig vom Channel Commander
 
 - Funk-RX-Erkennung läuft im Funk-Gateway/Funk-Papagei unabhängig von TeamSpeak Channel Commander
