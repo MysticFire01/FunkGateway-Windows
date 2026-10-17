@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4 Portable Preview
+
+- Windows-Updater: SSL/CERTIFICATE_VERIFY_FAILED in der PyInstaller-EXE behoben
+- `certifi` wird als CA-Zertifikatsspeicher mit der Standalone-Version gebündelt
+- HTTPS-Verbindungen zu GitHub verwenden ausdrücklich den gebündelten CA-Store
+- TLS-Zertifikatsprüfung bleibt vollständig aktiviert
+- keine unsichere Umgehung der Zertifikatsprüfung
+
 ## 0.1.3 Portable Preview
 
 - integrierter Windows-Selbstupdater unter Hilfe -> Nach Updates suchen
