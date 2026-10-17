@@ -3269,18 +3269,29 @@ class MainWindow(QMainWindow):
                     "Test-PTT ist nur in den Entwickleroptionen verfügbar. "
                     "Bitte eine echte PTT-Schnittstelle wählen."
                 )
-            return DryPTT()
-        port_data = self.gateway_ptt_port.currentData()
-        if port_data == "__manual_value__":
-            port_name = getattr(self, "_manual_gateway_ptt_port", "").strip()
+            raw_ptt = DryPTT()
         else:
-            port_name = str(port_data or self.gateway_ptt_port.currentText()).strip()
-        if not port_name or port_name.startswith("__"):
-            raise RuntimeError("Bitte einen gültigen COM-Port auswählen.")
-        return SerialPTT(
-            port_name,
-            self.gateway_ptt_line.currentText(),
-            self.gateway_ptt_invert.isChecked(),
+            port_data = self.gateway_ptt_port.currentData()
+            if port_data == "__manual_value__":
+                port_name = getattr(self, "_manual_gateway_ptt_port", "").strip()
+            else:
+                port_name = str(port_data or self.gateway_ptt_port.currentText()).strip()
+            if not port_name or port_name.startswith("__"):
+                raise RuntimeError("Bitte einen gültigen COM-Port auswählen.")
+            raw_ptt = SerialPTT(
+                port_name,
+                self.gateway_ptt_line.currentText(),
+                self.gateway_ptt_invert.isChecked(),
+            )
+
+        if not self.gateway_safety_enabled.isChecked():
+            return raw_ptt
+
+        return SafetyPTT(
+            raw_ptt,
+            max_tx_s=self.gateway_tot.value(),
+            min_off_ms=self.gateway_min_pause.value(),
+            event_callback=lambda kind, detail: self.gatewaySafetyEvent.emit(kind, detail),
         )
 
     def _start_gateway_ptt(self):
@@ -3343,7 +3354,11 @@ class MainWindow(QMainWindow):
             self.gateway_ptt_status.setText("Gateway PTT: zuerst Gateway starten")
             return
         try:
-            self.gateway_ptt.key(True)
+            accepted = self.gateway_ptt.key(True)
+            if accepted is False:
+                self.gateway_ptt_status.setText("Gateway PTT: gesperrt · Mindestpause")
+                self.status_ptt.setText("PTT: Schutzsperre")
+                return
             self.gateway_ptt_status.setText("Gateway PTT: EIN")
             self.status_ptt.setText("PTT: SENDEN")
             self._update_live_status()
@@ -4065,6 +4080,7 @@ class MainWindow(QMainWindow):
                 device,
                 self.ts_rx_threshold.value(),
                 self.ts_rx_hang.value(),
+                self.gateway_rx_confirm.value() if hasattr(self, "gateway_rx_confirm") else 100,
             )
             self.ts_rx_state_label.setText("Funk-RX: Detektor aktiv")
             self.ui_log.appendPlainText("Funk-RX: Audioaktivitätsdetektor gestartet.")
