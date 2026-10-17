@@ -167,21 +167,44 @@ try {{
 
     foreach ($item in $items) {{
         $dest = Join-Path $target $item.Name
-        $copied = $false
-        for ($try = 1; $try -le 10 -and -not $copied; $try++) {{
-            try {{
-                if ($item.PSIsContainer) {{
-                    Copy-Item -LiteralPath $item.FullName -Destination $dest -Recurse -Force
+        if ($item.PSIsContainer) {{
+            # Copy the directory CONTENTS, not the directory into an existing
+            # directory. PowerShell Copy-Item -Recurse otherwise risks nesting
+            # _internal/_internal and hiding newly bundled Python packages.
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            $srcRoot = $item.FullName.TrimEnd('\\')
+            Get-ChildItem -LiteralPath $srcRoot -Recurse -Force | ForEach-Object {{
+                $relative = $_.FullName.Substring($srcRoot.Length).TrimStart('\\')
+                $to = Join-Path $dest $relative
+                if ($_.PSIsContainer) {{
+                    New-Item -ItemType Directory -Force -Path $to | Out-Null
                 }} else {{
-                    Copy-Item -LiteralPath $item.FullName -Destination $dest -Force
+                    $parent = Split-Path -Parent $to
+                    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+                    $copied = $false
+                    for ($try = 1; $try -le 10 -and -not $copied; $try++) {{
+                        try {{
+                            Copy-Item -LiteralPath $_.FullName -Destination $to -Force -ErrorAction Stop
+                            $copied = $true
+                        }} catch {{
+                            if ($try -eq 10) {{ throw }}
+                            Start-Sleep -Milliseconds 500
+                        }}
+                    }}
                 }}
-                $copied = $true
-                ("[" + (Get-Date -Format s) + "] Copied " + $item.Name) | Add-Content -LiteralPath $log
-            }} catch {{
-                if ($try -eq 10) {{ throw }}
-                Start-Sleep -Milliseconds 500
             }}
+        }} else {{
+            Copy-Item -LiteralPath $item.FullName -Destination $dest -Force -ErrorAction Stop
         }}
+        ("[" + (Get-Date -Format s) + "] Updated " + $item.Name) | Add-Content -LiteralPath $log
+    }}
+
+    # QR packages must reside next to the other PyInstaller bundled modules.
+    $qrPackage = Join-Path $target '_internal\\qrcode'
+    $pilPackage = Join-Path $target '_internal\\PIL'
+    if (-not (Test-Path -LiteralPath $qrPackage -PathType Container) -or
+        -not (Test-Path -LiteralPath $pilPackage -PathType Container)) {{
+        throw "Update incomplete: packaged QR dependencies missing in _internal"
     }}
 
     $newExe = Join-Path $target $exe
