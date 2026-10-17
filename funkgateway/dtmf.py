@@ -37,6 +37,10 @@ class DtmfDecoder(QObject):
         self._last_emitted = ""
         self._last_signal_at = 0.0
         self._sequence = ""
+        self._buffer.clear()
+        self._buffer_rate = 0
+        self._buffer = bytearray()
+        self._buffer_rate = 0
 
     def configure(self, enabled=None, min_tone_ms=None, min_gap_ms=None):
         if enabled is not None:
@@ -107,8 +111,24 @@ class DtmfDecoder(QObject):
     def process_pcm(self, pcm: bytes, sample_rate: int):
         if not self.enabled:
             return
+        rate = int(sample_rate)
+        if rate <= 0:
+            return
+        if self._buffer_rate != rate:
+            self._buffer.clear()
+            self._buffer_rate = rate
+        self._buffer.extend(bytes(pcm))
+        # Analyze about 100 ms of audio. The source commonly provides 20 ms
+        # blocks, which are too short for reliable DTMF frequency separation.
+        wanted = max(160, int(rate * 0.10)) * 2
+        maximum = max(wanted, int(rate * 0.20) * 2)
+        if len(self._buffer) > maximum:
+            del self._buffer[:-maximum]
+        if len(self._buffer) < wanted:
+            return
+        window = bytes(self._buffer[-wanted:])
         now = time.monotonic()
-        tone = self._detect(bytes(pcm), int(sample_rate))
+        tone = self._detect(window, rate)
 
         if not tone:
             if self._last_signal_at and now - self._last_signal_at >= self.min_gap_ms / 1000.0:
