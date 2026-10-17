@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.7 Portable Preview**
+**0.1.8 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.7\
+FunkGateway-Windows-0.1.8\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -100,3 +100,11 @@ From 0.1.7, FRN TX captures the selected Windows microphone at its native/defaul
 sample rate (commonly 44.1 or 48 kHz) and resamples it internally to FRN's fixed
 8 kHz mono stream. This avoids silent capture on devices/drivers that do not
 behave correctly when opened directly at 8 kHz.
+
+
+## Updater shutdown reliability
+
+From 0.1.8, updates close FunkGateway through the normal window shutdown path
+so FRN, audio and global hotkey listeners are stopped before replacement.
+The external updater also waits at most 15 seconds for the old process and then
+forces it to stop if necessary before copying the new files.
