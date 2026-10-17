@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.26 – Mumble auf FRN-Niveau bei Bedienung und Status
+
+- Mumble-Integration in vier Unterseiten gegliedert: Verbindung, Channels, Teilnehmer, Audio / PTT
+- nativer FunkGateway-Mumble-Client ist klar vom optionalen Desktop-Mumble-Client getrennt
+- Channel-Liste direkt aus der nativen Gateway-Verbindung
+- Channel-Wechsel der nativen Gateway-Verbindung per Dropdown
+- Teilnehmerliste mit Name, Channel, Sprechstatus und Stumm/Taub-Status
+- aktive Sprecher werden laufend angezeigt
+- eigener Pegel für Funk → Mumble
+- eigener Pegel für Mumble → Funk
+- Audio/PTT-Seite zeigt Funk-RX-Eingang, Schwellwert, Nachlauf und Richtungsschalter kompakt zusammen
+- Trennen räumt Teilnehmerliste und Pegel sauber auf
+- weiterhin kein virtuelles Audiokabel nötig
+
 ## 0.2.25 – Native Mumble Audio ohne virtuelles Audiokabel
 
 - FunkGateway kann sich als eigener nativer Mumble-Teilnehmer direkt mit dem Server verbinden
