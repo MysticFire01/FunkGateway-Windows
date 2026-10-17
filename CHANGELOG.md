@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0 Windows UI Foundation
+
+- Hauptoberfläche an den Linux-Aufbau angeglichen
+- dauerhaft sichtbare Betriebsart- und Hauptsteuerleiste
+- Live-Statusleiste wie unter Linux
+- Betriebsarten PC-User, Funk-Gateway, Funk-Papagei und VoIP-Papagei
+- neue Haupttabs Start, Einrichtung, Audio, PTT / Modem, Integrationen, Darstellung, Log und Hilfe
+- Integrationen als Untertabs: Übersicht, FRN, TeamSpeak, Mumble
+- bestehendes natives FRN vollständig in die neue Oberfläche übernommen
+- FRN PTT bleibt lokal/systemweit, Hold/Latch und mit TX-Sicherheitslimit funktionsfähig
+- globaler NOT-AUS beendet FRN-PTT
+- Linux-Themes und Farbschemata auf Windows übernommen
+- TeamSpeak-/Mumble-Seiten als Portierungsbasis vorbereitet
+- portable Konfiguration speichert nun auch Betriebsart und Darstellung
+
 ## 0.1.22 Portable Preview
 
 - PC only (`CL=2`): leeres Stadtfeld sendet weiterhin exakt `CT=- -`
