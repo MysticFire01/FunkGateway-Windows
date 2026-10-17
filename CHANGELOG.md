@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.8 Portable Preview
+
+- Selbstupdater beendet FunkGateway über den normalen Fenster-Schließweg
+- FRN, Audio und globaler PTT-Hotkey werden vor dem Update sauber gestoppt
+- externer Update-Helfer wartet maximal 15 Sekunden auf den alten Prozess
+- hängt der alte Prozess danach noch, wird er gezielt beendet
+- Update kann dadurch nicht mehr endlos vor dem Kopieren hängen
+- `logs\\update.log` protokolliert auch Timeout und erzwungenes Beenden
+- Mikrofon-Resampling aus 0.1.7 bleibt enthalten
+
 ## 0.1.7 Portable Preview
 
 - Windows FRN-TX nimmt das Mikrofon nicht mehr starr mit 8 kHz auf
