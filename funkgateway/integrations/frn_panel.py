@@ -115,7 +115,7 @@ class FrnPanel(QWidget):
         head=QHBoxLayout(); title=QLabel('<b>FRN Native</b>'); badge=QLabel('ALPHA'); badge.setStyleSheet('font-weight:800;padding:3px 8px;border:1px solid #F2994A;border-radius:5px;')
         self.state_label=QLabel('FRN: getrennt'); head.addWidget(title); head.addWidget(badge); head.addStretch(1); head.addWidget(self.state_label); v.addLayout(head)
         note=QLabel('Native FRN-Unterstützung ist noch Alpha. Server-/Raumlisten, Audio und Protokollverhalten werden weiter getestet.'); note.setWordWrap(True); v.addWidget(note)
-        tabs=QTabWidget(); v.addWidget(tabs)
+        tabs=QTabWidget(); self.tabs=tabs; v.addWidget(tabs)
         # Connection
         w=QWidget(); f=QFormLayout(w)
         self.manager=QComboBox(); [self.manager.addItem(x['label'],k) for k,x in MANAGERS.items()]
@@ -125,17 +125,17 @@ class FrnPanel(QWidget):
         self.callsign=QLineEdit(); self.description=QLineEdit('FunkGateway UI'); self.band=QLineEdit(); self.country=QLineEdit('Germany'); self.city=QLineEdit()
         self.client_type=QComboBox(); self.client_type.addItem('Automatisch nach FunkGateway-Modus','auto'); self.client_type.addItem('Gateway (CL=1)',1); self.client_type.addItem('PC only (CL=2)',2); self.client_type.addItem('Crosslink (CL=0)',0)
         self.protocol_version=QLineEdit('2014003'); self.protocol_version.setToolTip('FRN-Protokollversion (VX). Standard 2014003; dies ist die verbreitete Client-Protokollversion, nicht die Server-Version <SV>.')
-        self.audio_enabled=QCheckBox('FRN-Audio aktiv'); self.audio_enabled.setChecked(True); self.audio_in=QComboBox(); self.audio_out=QComboBox(); rb=QPushButton('Audiogeräte neu laden'); rb.clicked.connect(self.refresh_audio_devices); test_out=QPushButton('Audio-Ausgang testen'); test_out.clicked.connect(self.test_audio_output)
+        self.audio_enabled=QCheckBox('FRN-Audio aktiv'); self.audio_enabled.setChecked(True); self.audio_in=QComboBox(); self.audio_out=QComboBox(); self.audio_refresh_btn=QPushButton('Audiogeräte neu laden'); self.audio_refresh_btn.clicked.connect(self.refresh_audio_devices); self.audio_test_btn=QPushButton('Audio-Ausgang testen'); self.audio_test_btn.clicked.connect(self.test_audio_output)
         self.connect_btn=QPushButton('Verbinden'); self.disconnect_btn=QPushButton('Trennen'); self.disconnect_btn.setEnabled(False); self.connect_btn.clicked.connect(self.connect_frn); self.disconnect_btn.clicked.connect(self.disconnect_frn)
         br=QHBoxLayout(); br.addWidget(self.connect_btn); br.addWidget(self.disconnect_btn)
-        compat_note=QLabel('Kompatibilität: PC only (CL=2) sendet BC=PC Only. Ist Stadt/Bereich leer, wird CT exakt als „- -“ gesendet; bei eingetragener Stadt wird nur der eingegebene Stadtname gesendet. Crosslink (CL=0) sendet BC=Crosslink. Gateway (CL=1) verwendet Band/Kanal und Stadt wie eingetragen.'); compat_note.setWordWrap(True)
-        for label,obj in [('SystemManager:',self.manager),('Server:',self.server),('Port:',self.port),('Raum:',self.room),('E-Mail:',self.email),('Passwort:',self.password),('',self.show_password),('',self.main_password_fallback),('Rufzeichen / Name:',self.callsign),('Beschreibung:',self.description),('Band / Kanal:',self.band),('Land:',self.country),('Stadt / Bereich:',self.city),('FRN Client-Typ (CL):',self.client_type),('FRN Version (VX):',self.protocol_version),('',compat_note),('',self.audio_enabled),('Audio Eingang:',self.audio_in),('Audio Ausgang:',self.audio_out),('',rb),('',test_out),('',br)]: f.addRow(label,obj)
+        self.compat_note=QLabel('Kompatibilität: PC only (CL=2) sendet BC=PC Only. Ist Stadt/Bereich leer, wird CT exakt als „- -“ gesendet; bei eingetragener Stadt wird nur der eingegebene Stadtname gesendet. Crosslink (CL=0) sendet BC=Crosslink. Gateway (CL=1) verwendet Band/Kanal und Stadt wie eingetragen.'); self.compat_note.setWordWrap(True)
+        for label,obj in [('SystemManager:',self.manager),('Server:',self.server),('Port:',self.port),('Raum:',self.room),('E-Mail:',self.email),('Passwort:',self.password),('',self.show_password),('',self.main_password_fallback),('Rufzeichen / Name:',self.callsign),('Beschreibung:',self.description),('Band / Kanal:',self.band),('Land:',self.country),('Stadt / Bereich:',self.city),('FRN Client-Typ (CL):',self.client_type),('FRN Version (VX):',self.protocol_version),('',self.compat_note),('',self.audio_enabled),('Audio Eingang:',self.audio_in),('Audio Ausgang:',self.audio_out),('',self.audio_refresh_btn),('',self.audio_test_btn),('',br)]: f.addRow(label,obj)
         tabs.addTab(w,'Verbindung')
         # Servers & rooms
         w=QWidget(); vv=QVBoxLayout(w); top=QHBoxLayout(); self.explorer_manager=QComboBox(); self.explorer_manager.addItem('Alle','all'); self.explorer_manager.addItem('DE Allgemein / Original','de_orig'); self.explorer_manager.addItem('DE Alternativ','de_alt'); self.explorer_manager.addItem('Russland','ru'); load=QPushButton('Serverliste laden'); load.clicked.connect(self._manual_refresh_servers); self.explorer_manager.currentIndexChanged.connect(lambda *_:self._manual_refresh_servers()); self.explorer_status=QLabel('Noch nicht geladen'); top.addWidget(self.explorer_manager); top.addWidget(load); top.addWidget(self.explorer_status); vv.addLayout(top)
         guard=QHBoxLayout(); self.sm_guard_enabled=QCheckBox('SystemManager-Schutzpause aktiv'); self.sm_guard_enabled.setChecked(True); self.sm_guard_minutes=QSpinBox(); self.sm_guard_minutes.setRange(1,120); self.sm_guard_minutes.setValue(15); self.sm_guard_minutes.setSuffix(' min'); self.sm_guard_status=QLabel('Automatik: bereit'); guard.addWidget(self.sm_guard_enabled); guard.addWidget(QLabel('Dauer:')); guard.addWidget(self.sm_guard_minutes); guard.addWidget(self.sm_guard_status,1); vv.addLayout(guard)
-        guard_note=QLabel('Nach 3 aufeinanderfolgenden automatischen SystemManager-Fehlern pausiert nur die Automatik. Manuelles Laden bleibt jederzeit möglich und umgeht die Schutzpause.'); guard_note.setWordWrap(True); vv.addWidget(guard_note)
-        server_note=QLabel('Der in der Serverliste angezeigte Raum ist nur ein veröffentlichter Hinweis. Server auswählen lädt die bekannten Räume; verbunden wird erst nach bewusster Raumwahl.'); server_note.setWordWrap(True); vv.addWidget(server_note)
+        self.guard_note=QLabel('Nach 3 aufeinanderfolgenden automatischen SystemManager-Fehlern pausiert nur die Automatik. Manuelles Laden bleibt jederzeit möglich und umgeht die Schutzpause.'); self.guard_note.setWordWrap(True); vv.addWidget(self.guard_note)
+        self.server_note=QLabel('Der in der Serverliste angezeigte Raum ist nur ein veröffentlichter Hinweis. Server auswählen lädt die bekannten Räume; verbunden wird erst nach bewusster Raumwahl.'); self.server_note.setWordWrap(True); vv.addWidget(self.server_note)
         search_row=QHBoxLayout(); search_row.addWidget(QLabel('Server suchen:')); self.server_search=QLineEdit(); self.server_search.setPlaceholderText('Server, Host/IP, Port oder Raum eingeben …'); self.server_search.setClearButtonEnabled(True); self.server_search.textChanged.connect(self.filter_servers); self.server_search.returnPressed.connect(self.connect_first_filtered_server); search_row.addWidget(self.server_search,1); vv.addLayout(search_row)
         self.server_table=QTableWidget(0,4); self.server_table.setHorizontalHeaderLabels(['Server','Port','Raum','Clients']); self.server_table.horizontalHeader().setSectionResizeMode(0,QHeaderView.Stretch); self.server_table.horizontalHeader().setSectionResizeMode(2,QHeaderView.Stretch); self.server_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.server_table.setEditTriggers(QAbstractItemView.NoEditTriggers); self.server_table.cellClicked.connect(lambda *_:self.use_selected_server(False)); self.server_table.cellDoubleClicked.connect(lambda *_:self.use_selected_server(False)); vv.addWidget(self.server_table)
         sb=QHBoxLayout(); use=QPushButton('Server auswählen / Räume anzeigen'); use.clicked.connect(lambda:self.use_selected_server(False)); dis=QPushButton('Trennen'); dis.clicked.connect(self.disconnect_frn); sb.addWidget(use); sb.addWidget(dis); vv.addLayout(sb)
@@ -308,6 +308,44 @@ class FrnPanel(QWidget):
     def set_ptt_hotkey_status(self,text):
         if hasattr(self,'ptt_hotkey_status'):
             self.ptt_hotkey_status.setText('Hotkey-Status: '+str(text))
+    def _set_form_field_visible(self, widget, visible):
+        if widget is None:
+            return
+        widget.setVisible(bool(visible))
+        for form in self.findChildren(QFormLayout):
+            try:
+                label = form.labelForField(widget)
+            except Exception:
+                label = None
+            if label is not None:
+                label.setVisible(bool(visible))
+
+    def apply_ui_level(self, level):
+        """Apply operator/full/developer visibility without changing values."""
+        level = str(level or "full")
+        simple = level == "simple"
+        developer = level == "developer"
+
+        # Regular technical detail: hidden only in simple mode.
+        for widget in (
+            self.manager, self.description, self.band, self.country,
+            self.client_type, self.main_password_fallback,
+            self.audio_refresh_btn, self.audio_test_btn,
+            self.explorer_manager, self.sm_guard_enabled,
+            self.sm_guard_minutes, self.sm_guard_status,
+            self.room_source, self.rx_meter, self.tx_meter,
+            self.rx_label, self.tx_label,
+        ):
+            self._set_form_field_visible(widget, not simple)
+
+        self.compat_note.setVisible(not simple)
+        self.guard_note.setVisible(not simple)
+        self.server_note.setVisible(not simple)
+
+        # Raw protocol version is a developer knob. Normal operation uses the
+        # tested default and should not invite accidental changes.
+        self._set_form_field_visible(self.protocol_version, developer)
+
     def set_gateway_mode(self,is_gateway):
         radio_auto=bool(is_gateway)
         was_radio_auto=self._radio_auto_mode
