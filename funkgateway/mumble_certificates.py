@@ -207,3 +207,72 @@ def delete_certificate(cert_id: str):
             path.unlink()
         except FileNotFoundError:
             pass
+
+
+def export_pem(cert_id: str, destination_dir: str | Path):
+    """Export the selected certificate and private key as a PEM pair."""
+    ensure_cert_dir()
+    cert_path, key_path = _paths(cert_id)
+    if not cert_path.exists() or not key_path.exists():
+        raise RuntimeError("Zertifikat oder privater Schlüssel wurde nicht gefunden.")
+
+    dest = Path(destination_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    out_cert = dest / cert_path.name
+    out_key = dest / key_path.name
+
+    copied = []
+    for src, dst in ((cert_path, out_cert), (key_path, out_key)):
+        try:
+            if src.resolve() == dst.resolve():
+                continue
+        except Exception:
+            pass
+        shutil.copy2(src, dst)
+        copied.append(str(dst))
+
+    return {
+        "cert_path": str(out_cert),
+        "key_path": str(out_key),
+        "copied": copied,
+    }
+
+
+def export_pkcs12(
+    cert_id: str,
+    destination_dir: str | Path,
+    password: str | None = None,
+):
+    """Export the selected identity as a single PKCS#12/PFX file."""
+    ensure_cert_dir()
+    cert_path, key_path = _paths(cert_id)
+    if not cert_path.exists() or not key_path.exists():
+        raise RuntimeError("Zertifikat oder privater Schlüssel wurde nicht gefunden.")
+
+    x509, _hashes, serialization, _rsa, pkcs12, _NameOID = _load_crypto()
+    cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
+    key = serialization.load_pem_private_key(
+        key_path.read_bytes(),
+        password=None,
+    )
+
+    if password:
+        encryption = serialization.BestAvailableEncryption(
+            password.encode("utf-8")
+        )
+    else:
+        encryption = serialization.NoEncryption()
+
+    data = pkcs12.serialize_key_and_certificates(
+        name=str(cert_id).encode("utf-8"),
+        key=key,
+        cert=cert,
+        cas=None,
+        encryption_algorithm=encryption,
+    )
+
+    dest = Path(destination_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    out = dest / f"{_safe_name(cert_id)}.p12"
+    out.write_bytes(data)
+    return str(out)
