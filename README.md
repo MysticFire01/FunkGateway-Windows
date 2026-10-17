@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.11 Portable Preview**
+**0.1.12 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.11\
+FunkGateway-Windows-0.1.12\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -132,3 +132,10 @@ From 0.1.11, decoded FRN RX audio remains 8 kHz internally but the selected
 Windows output device is opened at its native/default sample rate (commonly
 44.1 or 48 kHz). FunkGateway resamples the FRN PCM before playback, avoiding
 silent output on Windows drivers that accept but do not properly render 8 kHz.
+
+
+## Windows updater quoting fix
+
+From 0.1.12 the updater passes PowerShell arguments to `cmd.exe start`
+individually instead of pre-combining them into one quoted command string.
+This avoids Windows interpreting the helper command as a UNC/network path.
