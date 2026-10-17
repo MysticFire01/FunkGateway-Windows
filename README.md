@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.5 Portable Preview**
+**0.1.6 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.5\
+FunkGateway-Windows-0.1.6\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -87,3 +87,8 @@ Starting with 0.1.5, the portable Windows release ships `libgsm.dll` beside
 `FunkGateway-Windows.exe`. The DLL is loaded by absolute path from the portable
 application directory and is validated during the GitHub Actions build for
 GSM WAV49 support.
+
+
+## Updater diagnostics
+
+The updater writes `logs\\update.log`, uses native PowerShell path quoting, retries file replacement on short Windows locks, and never replaces `config` or `logs`.
