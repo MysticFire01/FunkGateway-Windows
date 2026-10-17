@@ -22,6 +22,7 @@ class RadioRxDetector(QObject):
 
     activity = Signal(bool)
     level = Signal(float)
+    pcm = Signal(bytes, int)
     error = Signal(str)
 
     def __init__(self, parent=None):
@@ -33,19 +34,24 @@ class RadioRxDetector(QObject):
         self._threshold = -35.0
         self._hang_ms = 700
         self._last_hot = 0.0
+        self._inhibit_until = 0.0
+        self._confirm_ms = 100
+        self._hot_since = 0.0
 
     @property
     def running(self):
         return bool(self._thread and self._thread.is_alive())
 
-    def start(self, device, threshold_dbfs=-35.0, hang_ms=700):
+    def start(self, device, threshold_dbfs=-35.0, hang_ms=700, confirm_ms=100):
         self.stop()
         if sd is None:
             raise RuntimeError("sounddevice / PortAudio ist nicht verfügbar.")
         self._device = device
         self._threshold = float(threshold_dbfs)
         self._hang_ms = max(0, int(hang_ms))
+        self._confirm_ms = max(0, int(confirm_ms))
         self._last_hot = 0.0
+        self._hot_since = 0.0
         self._active = False
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -57,6 +63,17 @@ class RadioRxDetector(QObject):
         if thread and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=1.5)
         self._thread = None
+        if self._active:
+            self._active = False
+            self.activity.emit(False)
+
+    def inhibit(self, milliseconds=900):
+        self._inhibit_until = max(
+            self._inhibit_until,
+            time.monotonic() + max(0, int(milliseconds)) / 1000.0,
+        )
+        self._hot_since = 0.0
+        self._last_hot = 0.0
         if self._active:
             self._active = False
             self.activity.emit(False)
@@ -88,17 +105,34 @@ class RadioRxDetector(QObject):
                 db = self._dbfs(raw)
                 now = time.monotonic()
                 self.level.emit(db)
+                self.pcm.emit(raw, int(rate))
 
-                if db >= self._threshold:
-                    self._last_hot = now
-                    if not self._active:
-                        self._active = True
-                        self.activity.emit(True)
-                elif self._active:
-                    hang = self._hang_ms / 1000.0
-                    if now - self._last_hot >= hang:
+                if now < self._inhibit_until:
+                    self._hot_since = 0.0
+                    self._last_hot = 0.0
+                    if self._active:
                         self._active = False
                         self.activity.emit(False)
+                    return
+
+                if db >= self._threshold:
+                    if not self._hot_since:
+                        self._hot_since = now
+                    self._last_hot = now
+                    confirmed = (
+                        self._confirm_ms <= 0
+                        or now - self._hot_since >= self._confirm_ms / 1000.0
+                    )
+                    if confirmed and not self._active:
+                        self._active = True
+                        self.activity.emit(True)
+                else:
+                    self._hot_since = 0.0
+                    if self._active:
+                        hang = self._hang_ms / 1000.0
+                        if now - self._last_hot >= hang:
+                            self._active = False
+                            self.activity.emit(False)
 
             with sd.RawInputStream(
                 samplerate=rate,
