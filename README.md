@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.2 Portable Preview**
+**0.1.3 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.2\
+FunkGateway-Windows-0.1.3\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -63,3 +63,12 @@ python main.py
 ## License
 
 GPL-3.0-or-later.
+
+
+## Integrated updater
+
+From 0.1.3 onward, use **Help -> Check for updates** inside FunkGateway.
+The updater downloads the latest Windows x64 release from GitHub, verifies its
+SHA256 digest, closes the running EXE, updates the portable program files and
+starts FunkGateway again. The local `config` and `logs` directories are
+explicitly excluded from replacement.
