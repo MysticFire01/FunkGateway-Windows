@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.11 Portable Preview
+
+- behebt stummen FRN-Empfang trotz sichtbarem RX-Pegel unter Windows
+- Lautsprecher wird nicht mehr starr mit 8 kHz geöffnet
+- native/default Sample-Rate des gewählten Ausgabegeräts wird automatisch verwendet
+- FRN-RX wird intern von 8 kHz auf die Windows-Ausgaberate hochgerechnet
+- RX-Pegel bleibt der echte dekodierte FRN-Pegel vor dem Resampling
+- Mikrofon-Resampling, GSM-WAV49 und Updater-Fixes bleiben erhalten
+
 ## 0.1.10 Portable Preview
 
 - behebt Startabbruch `ImportError: cannot import name 'updates' from 'funkgateway'`
