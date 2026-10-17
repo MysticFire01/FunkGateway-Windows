@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.19 Portable Preview
+
+- FRN-Feld `BC` wird jetzt passend zur Clientklasse erzeugt
+- `CL=2` sendet zwingend `BC=PC Only`
+- `CL=0` sendet zwingend `BC=Crosslink`
+- `CL=1` verwendet weiterhin das Band-/Kanal-Feld und verlangt einen Wert
+- leerer VX-Fallback von `20261016` auf `2014003` korrigiert
+- verbessert Kompatibilität mit Servern, die CL/BC-Konsistenz prüfen
+- alle bisherigen Audio-, Raumwechsel-, Updater- und Onedir-Fixes bleiben erhalten
+
 ## 0.1.18 Portable Preview
 
 - Standard-FRN-Clientversion auf `VX=2014003` korrigiert
