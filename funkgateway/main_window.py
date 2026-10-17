@@ -382,8 +382,44 @@ class MainWindow(QMainWindow):
         vf.addRow("", self.ui_level_note)
         v.addWidget(view_box)
 
+        wizard = QGroupBox("Einrichtungsassistent – Audio und PTT")
+        wf = QFormLayout(wizard)
+        description = QLabel("Schrittweise Audioeingang, Funk-Ausgang und PTT prüfen. Die Auswahl öffnet die vorhandenen Einstellungen; die Hardware wird nicht automatisch auf Sendung geschaltet.")
+        description.setWordWrap(True)
+        wf.addRow("", description)
+        open_audio = QPushButton("1. Audiogeräte auswählen")
+        open_audio.clicked.connect(lambda: self.tabs.setCurrentIndex(self._tab_index("Audio")))
+        wf.addRow("", open_audio)
+        open_ptt = QPushButton("2. PTT-Hardware einrichten")
+        open_ptt.clicked.connect(lambda: self.tabs.setCurrentIndex(self._tab_index("PTT / Modem")))
+        wf.addRow("", open_ptt)
+        check = QPushButton("3. Konfiguration prüfen")
+        check.clicked.connect(self._wizard_check)
+        wf.addRow("", check)
+        v.addWidget(wizard)
         v.addStretch(1)
         self._scroll_tab(page, "Einrichtung")
+
+    def _tab_index(self, name):
+        for index in range(self.tabs.count()):
+            if self.tabs.tabText(index) == name:
+                return index
+        return 0
+
+    def _wizard_check(self):
+        backend = self.gateway_ptt_backend.currentData()
+        port = str(self.gateway_ptt_port.currentData() or "")
+        issues = []
+        if backend == "serial" and (not port or port == "__manual_value__"):
+            issues.append("Seriellen COM-Port auswählen.")
+        if backend == "dry":
+            issues.append("Test-PTT aktiviert: Es wird keine echte Funkhardware geschaltet.")
+        if self.tx_audio_input.currentIndex() < 0:
+            issues.append("Audioeingang auswählen.")
+        if self.tx_audio_output.currentIndex() < 0:
+            issues.append("Audioausgang auswählen.")
+        text = "\\n".join(issues) if issues else "Audio- und PTT-Auswahl sind gesetzt. Bitte mit ausgeschaltetem Sender prüfen."
+        QMessageBox.information(self, "Einrichtungsprüfung", text)
 
     def _build_audio(self):
         page = QWidget()
