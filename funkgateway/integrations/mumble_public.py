@@ -11,11 +11,12 @@ import xml.etree.ElementTree as ET
 import certifi
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, QEventLoop, QTimer, QUrl
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 
 # Official public list used by the Mumble desktop client.
-OFFICIAL_PUBLIC_LIST_URL = "https://publist.mumble.info/v1/list?version=1.5.939"
+OFFICIAL_PUBLIC_LIST_URL = "https://publist.mumble.info/v1/list?version=1.5.915"
 
 # Fallback only. This endpoint currently returns a much smaller result set.
 LEGACY_PUBLIC_LIST_URL = "https://www.mumble.com/serverlist/ajax/list-servers.php"
@@ -73,6 +74,82 @@ def _legacy_ping(host: str, port: int, timeout: float = 0.7) -> dict:
     return result
 
 
+def _download_qt(url: str, accept: str, timeout_ms: int = 20000) -> tuple[bytes, dict]:
+    """Fetch with QtNetwork, matching the transport stack used by Mumble itself.
+
+    The official publist endpoint currently rejects the urllib/HTTP path on
+    some Windows systems with HTTP 501 / Transfer-Encoding errors. QtNetwork
+    avoids that incompatibility and is already part of FunkGateway via PySide6.
+    """
+    manager = QNetworkAccessManager()
+    request = QNetworkRequest(QUrl(url))
+    request.setRawHeader(b"User-Agent", b"Mumble/1.5.915 FunkGateway-Windows")
+    request.setRawHeader(b"Accept", accept.encode("ascii", errors="ignore"))
+    request.setRawHeader(b"Accept-Encoding", b"identity")
+    request.setRawHeader(b"Connection", b"close")
+
+    reply = manager.get(request)
+    loop = QEventLoop()
+    timer = QTimer()
+    timer.setSingleShot(True)
+
+    timed_out = {"value": False}
+
+    def on_timeout():
+        timed_out["value"] = True
+        try:
+            reply.abort()
+        except Exception:
+            pass
+        loop.quit()
+
+    reply.finished.connect(loop.quit)
+    timer.timeout.connect(on_timeout)
+    timer.start(int(timeout_ms))
+    loop.exec()
+
+    if timer.isActive():
+        timer.stop()
+
+    if timed_out["value"]:
+        reply.deleteLater()
+        raise RuntimeError("Zeitüberschreitung beim Abruf der offiziellen Mumble-Liste")
+
+    status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+    try:
+        status = int(status) if status is not None else 0
+    except Exception:
+        status = 0
+
+    error_code = reply.error()
+    error_text = reply.errorString()
+    raw = bytes(reply.readAll())
+
+    headers = {}
+    try:
+        for name in reply.rawHeaderList():
+            key = bytes(name).decode("latin1", errors="replace")
+            value = bytes(reply.rawHeader(name)).decode("latin1", errors="replace")
+            headers[key] = value
+    except Exception:
+        pass
+
+    reply.deleteLater()
+
+    if error_code != QNetworkReply.NetworkError.NoError:
+        raise RuntimeError(
+            f"QtNetwork Fehler {int(error_code)}"
+            + (f" / HTTP {status}" if status else "")
+            + f": {error_text}"
+        )
+    if status and not (200 <= status < 300):
+        raise RuntimeError(f"HTTP {status} beim Abruf der offiziellen Mumble-Liste")
+    if not raw:
+        raise RuntimeError("Offizielle Mumble-Liste lieferte keine Daten")
+
+    return raw, headers
+
+
 def _download(url: str, accept: str) -> tuple[bytes, object]:
     request = urllib.request.Request(
         url,
@@ -91,7 +168,7 @@ def _download(url: str, accept: str) -> tuple[bytes, object]:
 
 
 def _load_official_list() -> list[dict]:
-    raw, _headers = _download(
+    raw, _headers = _download_qt(
         OFFICIAL_PUBLIC_LIST_URL,
         "application/xml,text/xml;q=0.9,*/*;q=0.8",
     )
