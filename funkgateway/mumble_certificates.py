@@ -29,6 +29,44 @@ def _load_crypto():
     return x509, hashes, serialization, rsa, pkcs12, NameOID
 
 
+def certificate_backend_status():
+    """Exercise the exact cryptography pieces used by certificate creation.
+
+    This is intentionally in-memory: no user certificate files are created.
+    """
+    try:
+        x509, hashes, serialization, rsa, pkcs12, NameOID = _load_crypto()
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = x509.Name([
+            x509.NameAttribute(NameOID.COMMON_NAME, "FunkGateway Mumble Test"),
+        ])
+        now = datetime.now(timezone.utc)
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(subject)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - timedelta(minutes=1))
+            .not_valid_after(now + timedelta(days=1))
+            .sign(key, hashes.SHA256())
+        )
+        pem = cert.public_bytes(serialization.Encoding.PEM)
+        parsed = x509.load_pem_x509_certificate(pem)
+        fingerprint = parsed.fingerprint(hashes.SHA256()).hex(":").upper()
+        return {
+            "ok": True,
+            "version": __import__("cryptography").__version__,
+            "fingerprint": fingerprint,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "version": "",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
 def _paths(base: str):
     safe = _safe_name(base)
     return CERT_DIR / f"{safe}.cert.pem", CERT_DIR / f"{safe}.key.pem"
