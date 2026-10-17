@@ -113,6 +113,9 @@ class MumbleNativeGateway(QObject):
         self._self_mute_local = False
         self._self_deaf_local = False
         self._local_muted_sessions = set()
+        self._playback_volume = 1.0
+        self._user_playback_volume = {}
+        self._volume_server = ""
         self._certfile = ""
         self._keyfile = ""
 
@@ -171,6 +174,7 @@ class MumbleNativeGateway(QObject):
     ):
         self.disconnect()
         self._stop.clear()
+        self._volume_server = f"{str(host).strip().casefold()}:{int(port)}"
         self._receive_to_radio = bool(receive_to_radio)
         self._capture_device = radio_input
         self._capture_enabled = bool(radio_to_mumble)
@@ -536,6 +540,30 @@ class MumbleNativeGateway(QObject):
         if not active and not self._capture_enabled and not self._pc_ptt_enabled:
             self._stop_capture()
 
+    def set_playback_volume(self, percent):
+        self._playback_volume = max(0.0, min(2.0, float(percent) / 100.0))
+
+    def set_user_playback_volumes(self, values):
+        """Values keyed by host:port|username (not session, which changes on reconnect)."""
+        self._user_playback_volume = {
+            str(key): max(0.0, min(2.0, float(value) / 100.0))
+            for key, value in dict(values or {}).items()
+        }
+
+    def volume_key(self, name):
+        return f"{self._volume_server}|{str(name).strip().casefold()}"
+
+    def user_playback_volume(self, name):
+        return int(round(100 * self._user_playback_volume.get(self.volume_key(name), 1.0)))
+
+    def set_user_playback_volume(self, name, percent):
+        value = max(0.0, min(2.0, float(percent) / 100.0))
+        key = self.volume_key(name)
+        if value == 1.0:
+            self._user_playback_volume.pop(key, None)
+        else:
+            self._user_playback_volume[key] = value
+
     def configure_playback(self, enabled, output_device=None):
         self._playback_enabled = bool(enabled)
         self._playback_device = output_device
@@ -800,7 +828,13 @@ class MumbleNativeGateway(QObject):
             self.networkRxLevel.emit(self._dbfs(pcm))
             self.networkPcm.emit(pcm)
             if self._playback_enabled and not self._self_deaf_local:
-                self._queue_playback(pcm)
+                gain = self._playback_volume * self._user_playback_volume.get(
+                    self.volume_key(name), 1.0
+                )
+                if gain > 0:
+                    self._queue_playback(
+                        pcm if gain == 1.0 else audioop.mul(pcm, 2, gain)
+                    )
             if self._receive_to_radio and self.tx_engine is not None:
                 self.tx_engine.push_pcm(pcm, 48000, 1, "Mumble: " + name)
         except Exception as exc:
