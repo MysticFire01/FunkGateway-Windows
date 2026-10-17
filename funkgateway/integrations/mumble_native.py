@@ -615,6 +615,9 @@ class MumbleNativeGateway(QObject):
             result.append({
                 "name": name,
                 "channel": channel_path,
+                "channel_id": (
+                    int(channel_id) if channel_id is not None else None
+                ),
                 "talking": own_talking or name in active,
                 "speech_mode": ("normal" if own_talking else active.get(name, "")),
                 "server_mute": server_mute,
