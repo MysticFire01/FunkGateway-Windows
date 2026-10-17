@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.14 Portable Preview**
+**0.1.15 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.14\
+FunkGateway-Windows-0.1.15\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -156,3 +156,13 @@ network receive is stopped first, RX/TX audio workers are joined, and only then
 are PortAudio streams and the GSM codec released. This prevents the Windows
 native crash that could occur when a room was changed while audio was being
 decoded or written to the speaker.
+
+
+## Standalone onedir build
+
+Starting with 0.1.15 the Windows release uses PyInstaller **onedir** instead of
+**onefile**. Python and all runtime DLLs live permanently beside the EXE in the
+portable application directory. This avoids PyInstaller's temporary `_MEI...`
+extraction and the related `python312.dll` startup failures seen on some
+Windows 10 systems. The application remains fully portable and can still be
+placed on an external drive.
