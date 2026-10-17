@@ -425,12 +425,11 @@ class MainWindow(QMainWindow):
         if mode == "pc":
             self.frn_ptt_btn.setText("FRN PTT")
             self.frn_ptt_btn.setEnabled(True)
-        elif mode in ("gateway", "radio_parrot"):
-            self.frn_ptt_btn.setText("Gateway PTT")
-            self.frn_ptt_btn.setEnabled(self.gateway_started)
+            self.frn_ptt_btn.setVisible(True)
         else:
-            self.frn_ptt_btn.setText("PTT")
-            self.frn_ptt_btn.setEnabled(False)
+            # Gateway hardware PTT is tested/configured under PTT / Modem.
+            # Keep the permanent top bar uncluttered outside PC-user mode.
+            self.frn_ptt_btn.setVisible(False)
 
         palette = getattr(self, "current_theme_palette", {}) or {}
         color = MODE_COLORS.get(mode, palette.get("accent", "#2F80ED")) if self.mode_colors.isChecked() else palette.get("accent", "#2F80ED")
@@ -439,6 +438,15 @@ class MainWindow(QMainWindow):
         self.live_status_bar.setStyleSheet(
             f"padding:7px 10px; border-radius:8px; border-left:5px solid {color}; "
             f"background:{panel}; color:{text}; font-weight:600;"
+        )
+
+        # Active tabs follow the selected operating mode instead of staying
+        # on the theme's default accent color.
+        tab_text = contrast_text(color)
+        self.setStyleSheet(
+            "QTabBar::tab:selected {"
+            f"background:{color}; color:{tab_text}; border-color:{color};"
+            "}"
         )
         for m, button in self.mode_cards.items():
             if m == mode:
@@ -533,7 +541,6 @@ class MainWindow(QMainWindow):
             self.status_ptt.setText("PTT: Gateway bereit")
             self.start_main_btn.setEnabled(False)
             self.stop_main_btn.setEnabled(True)
-            self.frn_ptt_btn.setEnabled(True)
             self._update_live_status()
         except Exception as exc:
             self.gateway_ptt = None
@@ -561,8 +568,6 @@ class MainWindow(QMainWindow):
         if hasattr(self, "start_main_btn"):
             self.start_main_btn.setEnabled(True)
             self.stop_main_btn.setEnabled(False)
-        if hasattr(self, "frn_ptt_btn") and self._mode() != "pc":
-            self.frn_ptt_btn.setEnabled(False)
         if not silent:
             self._update_live_status()
 
