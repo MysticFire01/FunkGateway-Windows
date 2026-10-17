@@ -205,12 +205,18 @@ static void receiverLoop() {
             sendto(
                 g_socket, ack, static_cast<int>(sizeof(ack) - 1), 0,
                 reinterpret_cast<sockaddr*>(&from), fromLen);
+        } else if (hdr->type == 5) {
+            static const char versionReply[] = "FGV10.1.1";
+            sendto(
+                g_socket, versionReply,
+                static_cast<int>(sizeof(versionReply) - 1), 0,
+                reinterpret_cast<sockaddr*>(&from), fromLen);
         }
     }
 }
 
 const char* ts3plugin_name() { return "FunkGateway Audio Bridge"; }
-const char* ts3plugin_version() { return "0.1.0"; }
+const char* ts3plugin_version() { return "0.1.1"; }
 int ts3plugin_apiVersion() { return PLUGIN_API_VERSION; }
 const char* ts3plugin_author() { return "MysticFire01"; }
 const char* ts3plugin_description() {
