@@ -22,6 +22,7 @@ from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contras
 from .ptt import DryPTT, SerialPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
 from .integrations.mumble_windows import MumbleWindowsBackend
+from .integrations.mumble_native import MumbleNativeGateway
 from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_devices
 from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge, PLUGIN_VERSION as TS_PLUGIN_VERSION
 from .tx_audio import AudioTxEngine, SoundInputTxSource
@@ -93,6 +94,15 @@ class MainWindow(QMainWindow):
             log=lambda msg: self.ui_log.appendPlainText(msg) if hasattr(self, "ui_log") else None
         )
         self.tx_audio_engine = AudioTxEngine(self)
+        self.mumble_native = MumbleNativeGateway(self.tx_audio_engine, self)
+        self._mumble_owns_tx_engine = False
+        self.mumble_native.status.connect(self._mumble_native_status_changed)
+        self.mumble_native.connectedChanged.connect(self._mumble_native_connected_changed)
+        self.mumble_native.channelChanged.connect(self._mumble_native_channel_changed)
+        self.mumble_native.speakersChanged.connect(self._mumble_native_speakers_changed)
+        self.mumble_native.radioRxActivity.connect(self._mumble_native_rx_activity_changed)
+        self.mumble_native.radioRxLevel.connect(self._mumble_native_rx_level_changed)
+        self.mumble_native.error.connect(self._mumble_native_error)
         self.tx_audio_source = SoundInputTxSource(self.tx_audio_engine, self)
         self.tx_wasapi_source = WasapiSystemLoopbackSource(
             self.tx_audio_engine, APP_DIR, self
@@ -613,6 +623,85 @@ class MainWindow(QMainWindow):
         mf.addRow("", self.mumble_move_btn)
         mf.addRow("Steuerung:", self.mumble_mode_label)
         mf.addRow("", self.mumble_note)
+
+        mf.addRow(QLabel("<b>Direkter FunkGateway-Mumble-Client</b>"))
+        self.mumble_native_enabled = QCheckBox(
+            "Native Mumble-Gateway-Verbindung ohne virtuelles Audiokabel"
+        )
+        self.mumble_native_enabled.setChecked(False)
+        self.mumble_native_nick = QLineEdit("FunkGateway Windows")
+        self.mumble_native_password = QLineEdit()
+        self.mumble_native_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.mumble_native_password.setPlaceholderText("optional")
+
+        self.mumble_native_connect_btn = QPushButton("Native Mumble-Verbindung starten")
+        self.mumble_native_disconnect_btn = QPushButton("Native Mumble-Verbindung trennen")
+        self.mumble_native_disconnect_btn.setEnabled(False)
+        self.mumble_native_connect_btn.clicked.connect(self._connect_mumble_native)
+        self.mumble_native_disconnect_btn.clicked.connect(self._disconnect_mumble_native)
+
+        self.mumble_native_status_label = QLabel("Native Mumble: aus")
+        self.mumble_native_status_label.setWordWrap(True)
+        self.mumble_native_current_channel = QLabel("—")
+        self.mumble_native_speakers = QLabel("—")
+        self.mumble_native_speakers.setWordWrap(True)
+
+        self.mumble_native_channel_select = QComboBox()
+        self.mumble_native_channel_select.setMinimumWidth(300)
+        self.mumble_native_channels_btn = QPushButton("Native Channel-Liste laden")
+        self.mumble_native_channels_btn.clicked.connect(self._refresh_mumble_native_channels)
+        self.mumble_native_move_btn = QPushButton("Native Verbindung in Channel wechseln")
+        self.mumble_native_move_btn.clicked.connect(self._move_mumble_native_channel)
+
+        self.mumble_radio_to_net = QCheckBox("Funk-RX → Mumble senden")
+        self.mumble_net_to_radio = QCheckBox("Mumble → Funk / RTS-DTR-PTT")
+        self.mumble_net_to_radio.toggled.connect(self._mumble_net_to_radio_changed)
+        self.mumble_rx_input = QComboBox()
+        self.mumble_rx_input.setMinimumWidth(300)
+        self.mumble_rx_refresh_btn = QPushButton("Funk-RX Audiogeräte neu laden")
+        self.mumble_rx_refresh_btn.clicked.connect(self._refresh_mumble_rx_inputs)
+        self.mumble_rx_threshold = QDoubleSpinBox()
+        self.mumble_rx_threshold.setRange(-80.0, -3.0)
+        self.mumble_rx_threshold.setDecimals(1)
+        self.mumble_rx_threshold.setValue(-35.0)
+        self.mumble_rx_threshold.setSuffix(" dBFS")
+        self.mumble_rx_hang = QSpinBox()
+        self.mumble_rx_hang.setRange(0, 5000)
+        self.mumble_rx_hang.setValue(700)
+        self.mumble_rx_hang.setSuffix(" ms")
+        self.mumble_rx_level_label = QLabel("Funk-RX: —")
+        self.mumble_rx_state_label = QLabel("Funk-RX: frei")
+        self._refresh_mumble_rx_inputs()
+
+        native_note = QLabel(
+            "Der direkte Weg verbindet FunkGateway als eigenen Mumble-Teilnehmer mit dem Server. "
+            "Dadurch kann FunkGateway PCM-Audio direkt senden und empfangen, ohne VB-CABLE. "
+            "Der normale Mumble-Desktop-Client kann parallel weiterlaufen."
+        )
+        native_note.setWordWrap(True)
+        self.mumble_native_note = native_note
+
+        mf.addRow("", self.mumble_native_enabled)
+        mf.addRow("Gateway-Nickname:", self.mumble_native_nick)
+        mf.addRow("Server-Passwort:", self.mumble_native_password)
+        mf.addRow("", self.mumble_native_connect_btn)
+        mf.addRow("", self.mumble_native_disconnect_btn)
+        mf.addRow("Native Status:", self.mumble_native_status_label)
+        mf.addRow("Native Channel:", self.mumble_native_current_channel)
+        mf.addRow("Aktive Sprecher:", self.mumble_native_speakers)
+        mf.addRow("Channel auswählen:", self.mumble_native_channel_select)
+        mf.addRow("", self.mumble_native_channels_btn)
+        mf.addRow("", self.mumble_native_move_btn)
+        mf.addRow("", self.mumble_radio_to_net)
+        mf.addRow("", self.mumble_net_to_radio)
+        mf.addRow("Funk-RX Eingang:", self.mumble_rx_input)
+        mf.addRow("", self.mumble_rx_refresh_btn)
+        mf.addRow("RX-Schwellwert:", self.mumble_rx_threshold)
+        mf.addRow("RX-Nachlauf:", self.mumble_rx_hang)
+        mf.addRow("RX-Pegel:", self.mumble_rx_level_label)
+        mf.addRow("RX-Status:", self.mumble_rx_state_label)
+        mf.addRow("", self.mumble_native_note)
+
         self.integration_tabs.addTab(mumble, "Mumble")
 
         self._scroll_tab(page, "Integrationen")
@@ -672,6 +761,174 @@ class MainWindow(QMainWindow):
             self.mumble_status_label.setText("Channel-Wechsel angefordert")
         except Exception as exc:
             QMessageBox.warning(self, "Mumble Channel-Wechsel", str(exc))
+
+    def _refresh_mumble_rx_inputs(self):
+        if not hasattr(self, "mumble_rx_input"):
+            return
+        current = self.mumble_rx_input.currentData()
+        self.mumble_rx_input.clear()
+        for index, name in input_devices():
+            self.mumble_rx_input.addItem(f"{index}: {name}", index)
+        if current is not None:
+            idx = self.mumble_rx_input.findData(current)
+            if idx >= 0:
+                self.mumble_rx_input.setCurrentIndex(idx)
+
+    def _connect_mumble_native(self):
+        if not self.mumble_native_enabled.isChecked():
+            QMessageBox.information(
+                self, "Native Mumble",
+                "Bitte zuerst „Native Mumble-Gateway-Verbindung“ aktivieren."
+            )
+            return
+        if not self.mumble_native.available():
+            QMessageBox.warning(
+                self, "Native Mumble",
+                "Die native Mumble-Bibliothek ist nicht verfügbar. "
+                "Bitte FunkGateway aktualisieren oder die Installation reparieren."
+            )
+            return
+
+        nickname = self.mumble_native_nick.text().strip() or "FunkGateway Windows"
+        self.mumble_native_connect_btn.setEnabled(False)
+        self.mumble_native_status_label.setText("Native Mumble: verbindet …")
+        try:
+            self.mumble_native.connect_async(
+                self.mumble_server.text().strip(),
+                self.mumble_port.value(),
+                nickname,
+                self.mumble_native_password.text(),
+                self.mumble_channel.text().strip(),
+                receive_to_radio=self.mumble_net_to_radio.isChecked(),
+                radio_input=self.mumble_rx_input.currentData(),
+                radio_to_mumble=self.mumble_radio_to_net.isChecked(),
+                threshold_dbfs=self.mumble_rx_threshold.value(),
+                hang_ms=self.mumble_rx_hang.value(),
+            )
+            self._ensure_mumble_radio_tx_engine()
+        except Exception as exc:
+            self.mumble_native_connect_btn.setEnabled(True)
+            QMessageBox.warning(self, "Native Mumble", str(exc))
+
+    def _disconnect_mumble_native(self):
+        try:
+            self.mumble_native.disconnect()
+        finally:
+            self.mumble_native_connect_btn.setEnabled(True)
+            self.mumble_native_disconnect_btn.setEnabled(False)
+            if self._mumble_owns_tx_engine:
+                self.tx_audio_engine.stop()
+                self._mumble_owns_tx_engine = False
+
+    def _refresh_mumble_native_channels(self):
+        paths = self.mumble_native.channel_paths()
+        self.mumble_native_channel_select.clear()
+        for cid, path in paths:
+            self.mumble_native_channel_select.addItem(path, cid)
+        if not paths:
+            self.mumble_native_status_label.setText(
+                "Native Mumble: keine Channel-Liste verfügbar"
+            )
+
+    def _move_mumble_native_channel(self):
+        path = self.mumble_native_channel_select.currentText().strip()
+        if not path:
+            path = self.mumble_channel.text().strip()
+        if not path:
+            return
+        if self.mumble_native.move_to_path(path):
+            self.mumble_channel.setText(path)
+            self.ui_log.appendPlainText("Native Mumble: Channel-Wechsel → " + path)
+        else:
+            QMessageBox.warning(
+                self, "Native Mumble",
+                "Der gewünschte Channel wurde in der nativen Verbindung nicht gefunden."
+            )
+
+    def _mumble_native_status_changed(self, text):
+        if hasattr(self, "mumble_native_status_label"):
+            self.mumble_native_status_label.setText(str(text))
+        if hasattr(self, "status_mumble") and self.mumble_native.connected:
+            self.status_mumble.setText("Mumble: Native Gateway verbunden")
+
+    def _mumble_native_connected_changed(self, connected):
+        connected = bool(connected)
+        if hasattr(self, "mumble_native_connect_btn"):
+            self.mumble_native_connect_btn.setEnabled(not connected)
+            self.mumble_native_disconnect_btn.setEnabled(connected)
+        if connected:
+            self.status_mumble.setText("Mumble: Native Gateway verbunden")
+            QTimer.singleShot(600, self._refresh_mumble_native_channels)
+            self._ensure_mumble_radio_tx_engine()
+        else:
+            if hasattr(self, "mumble_native_status_label"):
+                self.mumble_native_status_label.setText("Native Mumble: getrennt")
+            if self._mumble_owns_tx_engine:
+                self.tx_audio_engine.stop()
+                self._mumble_owns_tx_engine = False
+
+    def _mumble_native_channel_changed(self, channel):
+        if hasattr(self, "mumble_native_current_channel"):
+            self.mumble_native_current_channel.setText(str(channel or "—"))
+
+    def _mumble_native_speakers_changed(self, speakers):
+        names = list(speakers or [])
+        if hasattr(self, "mumble_native_speakers"):
+            self.mumble_native_speakers.setText(
+                ", ".join(names) if names else "—"
+            )
+
+    def _mumble_native_rx_activity_changed(self, active):
+        if hasattr(self, "mumble_rx_state_label"):
+            self.mumble_rx_state_label.setText(
+                "Funk-RX: AKTIV → Mumble" if active else "Funk-RX: frei"
+            )
+
+    def _mumble_native_rx_level_changed(self, db):
+        if hasattr(self, "mumble_rx_level_label"):
+            self.mumble_rx_level_label.setText(f"Funk-RX: {float(db):.1f} dBFS")
+
+    def _mumble_native_error(self, message):
+        text = str(message)
+        if hasattr(self, "mumble_native_status_label"):
+            self.mumble_native_status_label.setText(text)
+        if hasattr(self, "ui_log"):
+            self.ui_log.appendPlainText(text)
+
+    def _ensure_mumble_radio_tx_engine(self):
+        if not hasattr(self, "mumble_net_to_radio"):
+            return
+        if not self.mumble_native.connected:
+            return
+        if not self.mumble_net_to_radio.isChecked():
+            return
+        if not self.gateway_started or self.gateway_ptt is None:
+            return
+
+        self.mumble_native.set_receive_to_radio(True)
+        if self.tx_audio_engine.running:
+            return
+        try:
+            self.tx_audio_engine.start(
+                self.tx_audio_output.currentData(),
+                self.gateway_ptt,
+                self.tx_audio_threshold.value(),
+                self.tx_audio_hang.value(),
+            )
+            self._mumble_owns_tx_engine = True
+            self.ui_log.appendPlainText(
+                "Mumble → Funk: generischer TX-Audiokern gestartet."
+            )
+        except Exception as exc:
+            self._mumble_native_error("Mumble → Funk: " + str(exc))
+
+    def _mumble_net_to_radio_changed(self, enabled):
+        self.mumble_native.set_receive_to_radio(bool(enabled))
+        if enabled:
+            self._ensure_mumble_radio_tx_engine()
+        elif self._mumble_owns_tx_engine:
+            self.tx_audio_engine.stop()
+            self._mumble_owns_tx_engine = False
 
     def _build_appearance(self):
         page = QWidget()
@@ -845,6 +1102,22 @@ class MainWindow(QMainWindow):
             getattr(self, "mumble_test_btn", None),
             getattr(self, "mumble_mode_label", None),
             getattr(self, "mumble_note", None),
+        ):
+            if widget is not None:
+                self._set_form_field_visible(widget, not simple)
+
+        # Native Mumble core controls stay usable in Simple. Fine tuning and
+        # credentials/channel maintenance are shown in Full/Developer.
+        for widget in (
+            getattr(self, "mumble_native_password", None),
+            getattr(self, "mumble_native_channel_select", None),
+            getattr(self, "mumble_native_channels_btn", None),
+            getattr(self, "mumble_native_move_btn", None),
+            getattr(self, "mumble_rx_refresh_btn", None),
+            getattr(self, "mumble_rx_threshold", None),
+            getattr(self, "mumble_rx_hang", None),
+            getattr(self, "mumble_rx_level_label", None),
+            getattr(self, "mumble_native_note", None),
         ):
             if widget is not None:
                 self._set_form_field_visible(widget, not simple)
@@ -1217,6 +1490,7 @@ class MainWindow(QMainWindow):
             self._start_tx_audio()
             self._start_radio_rx_detector()
             self._start_radio_audio_bridge()
+            self._ensure_mumble_radio_tx_engine()
             self._update_live_status()
         except Exception as exc:
             self.gateway_ptt = None
@@ -1228,6 +1502,7 @@ class MainWindow(QMainWindow):
         # Stop audio sources first. They own the automatic PTT activity and
         # must release it before the serial backend is closed.
         self._stop_tx_audio()
+        self._mumble_owns_tx_engine = False
         ptt = self.gateway_ptt
         self.gateway_ptt = None
         self.gateway_started = False
@@ -2327,6 +2602,19 @@ class MainWindow(QMainWindow):
                 self.mumble_port.setValue(int(mumble_cfg.get("port", 64738)))
                 self.mumble_user.setText(str(mumble_cfg.get("user", "")))
                 self.mumble_channel.setText(str(mumble_cfg.get("channel", "")))
+                if hasattr(self, "mumble_native_enabled"):
+                    self.mumble_native_enabled.setChecked(bool(mumble_cfg.get("native_enabled", False)))
+                    self.mumble_native_nick.setText(str(mumble_cfg.get("native_nick", "FunkGateway Windows")))
+                    self.mumble_native_password.setText(str(mumble_cfg.get("native_password", "")))
+                    self.mumble_radio_to_net.setChecked(bool(mumble_cfg.get("radio_to_net", False)))
+                    self.mumble_net_to_radio.setChecked(bool(mumble_cfg.get("net_to_radio", False)))
+                    self.mumble_rx_threshold.setValue(float(mumble_cfg.get("rx_threshold", -35.0)))
+                    self.mumble_rx_hang.setValue(int(mumble_cfg.get("rx_hang_ms", 700)))
+                    wanted_rx = mumble_cfg.get("rx_input")
+                    if wanted_rx is not None:
+                        idx = self.mumble_rx_input.findData(wanted_rx)
+                        if idx >= 0:
+                            self.mumble_rx_input.setCurrentIndex(idx)
 
             ptt_cfg = data.get("ptt", {})
             idx = self.gateway_ptt_backend.findData(ptt_cfg.get("backend", "dry"))
@@ -2416,6 +2704,14 @@ class MainWindow(QMainWindow):
                 "port": self.mumble_port.value() if hasattr(self, "mumble_port") else 64738,
                 "user": self.mumble_user.text().strip() if hasattr(self, "mumble_user") else "",
                 "channel": self.mumble_channel.text().strip() if hasattr(self, "mumble_channel") else "",
+                "native_enabled": self.mumble_native_enabled.isChecked() if hasattr(self, "mumble_native_enabled") else False,
+                "native_nick": self.mumble_native_nick.text().strip() if hasattr(self, "mumble_native_nick") else "FunkGateway Windows",
+                "native_password": self.mumble_native_password.text() if hasattr(self, "mumble_native_password") else "",
+                "radio_to_net": self.mumble_radio_to_net.isChecked() if hasattr(self, "mumble_radio_to_net") else False,
+                "net_to_radio": self.mumble_net_to_radio.isChecked() if hasattr(self, "mumble_net_to_radio") else False,
+                "rx_input": self.mumble_rx_input.currentData() if hasattr(self, "mumble_rx_input") else None,
+                "rx_threshold": self.mumble_rx_threshold.value() if hasattr(self, "mumble_rx_threshold") else -35.0,
+                "rx_hang_ms": self.mumble_rx_hang.value() if hasattr(self, "mumble_rx_hang") else 700,
             },
             "teamspeak": {
                 "enabled": self.ts_enabled.isChecked(),
@@ -2464,6 +2760,10 @@ class MainWindow(QMainWindow):
             if hasattr(self, "ts_plugin_watchdog"):
                 self.ts_plugin_watchdog.stop()
             self.ts_client.close()
+        except Exception:
+            pass
+        try:
+            self.mumble_native.disconnect()
         except Exception:
             pass
         try:
