@@ -320,3 +320,11 @@ input can also be selected for testing without radio hardware.
 Radio RX detection is now independent from TeamSpeak Channel Commander. The
 commander option only mirrors an already detected RX state to TeamSpeak; it no
 longer starts or stops the detector itself.
+
+
+## Live TeamSpeak forwarding switch 0.2.12
+
+The Funk-RX-to-TeamSpeak checkbox is now a live runtime control. Disabling it
+immediately stops the active plugin/device bridge while radio RX detection keeps
+running independently. Re-enabling it starts forwarding again while the gateway
+is running.
