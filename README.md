@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.16 Portable Preview**
+**0.1.17 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.16\
+FunkGateway-Windows-0.1.17\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -173,3 +173,11 @@ placed on an external drive.
 From 0.1.16 every exit from the FRN network thread also stops the audio worker
 threads. This includes server BLOCK responses, login failures, protocol errors
 and remote disconnects, preventing a stale play_thread from remaining alive.
+
+
+## Audio after successful FRN login
+
+From 0.1.17 PortAudio and the GSM codec are started only after the FRN server
+has accepted login stage 2. A server response such as AL=BLOCK or AL=WRONG
+therefore creates no RX/TX audio worker at all, avoiding stale play_thread
+warnings and unnecessary device opens on rejected connections.
