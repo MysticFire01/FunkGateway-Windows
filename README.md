@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.4 Portable Preview**
+**0.1.5 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.4\
+FunkGateway-Windows-0.1.5\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -79,3 +79,11 @@ explicitly excluded from replacement.
 The portable updater uses a bundled `certifi` CA certificate store for HTTPS
 connections to GitHub. Certificate verification remains enabled; the updater
 does not use insecure TLS bypasses.
+
+
+## Bundled GSM 06.10 codec
+
+Starting with 0.1.5, the portable Windows release ships `libgsm.dll` beside
+`FunkGateway-Windows.exe`. The DLL is loaded by absolute path from the portable
+application directory and is validated during the GitHub Actions build for
+GSM WAV49 support.
