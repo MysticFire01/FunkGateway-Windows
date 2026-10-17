@@ -442,3 +442,19 @@ version. For legacy clients such as Mumble 1.2.9, FunkGateway uses Mumble's
 official mumble:// URL mechanism for server/channel navigation. Clients from
 Mumble 1.4 onward are marked as candidates for the modern general-purpose plugin
 API, which will be layered on top later.
+
+
+## Native Mumble gateway audio 0.2.25
+
+FunkGateway can now establish its own Mumble protocol connection as a separate
+Mumble user. This gives FunkGateway direct PCM access in both directions without
+a Windows virtual audio cable:
+
+- radio RX -> Mumble: captures the selected radio input, applies RX
+  threshold/hang and sends 48 kHz mono PCM through Mumble/Opus;
+- Mumble -> radio: decoded Mumble PCM is fed directly into FunkGateway's generic
+  TX engine, which handles the selected radio output and RTS/DTR PTT.
+
+The normal desktop Mumble client may remain open in parallel. The native gateway
+connection has its own nickname/password and can load/move through the server's
+channel list.
