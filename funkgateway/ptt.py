@@ -88,6 +88,7 @@ class SafetyPTT(PTTBase):
         self.active = False
         self._on_since = 0.0
         self._lockout_until = 0.0
+        self._last_lockout_emit = 0.0
         self._stop = threading.Event()
         self._lock = threading.RLock()
         self._thread = threading.Thread(target=self._watchdog, daemon=True)
@@ -110,7 +111,12 @@ class SafetyPTT(PTTBase):
                 if self.active:
                     return True
                 if now < self._lockout_until:
-                    self._emit("lockout", f"{max(0.0, self._lockout_until-now):.2f}s")
+                    if now - self._last_lockout_emit >= 0.25:
+                        self._last_lockout_emit = now
+                        self._emit(
+                            "lockout",
+                            f"{max(0.0, self._lockout_until-now):.2f}s",
+                        )
                     return False
                 self.backend.key(True)
                 self.active = True
