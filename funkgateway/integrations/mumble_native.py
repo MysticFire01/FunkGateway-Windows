@@ -204,7 +204,7 @@ class MumbleNativeGateway(QObject):
                 host, nickname, port=int(port), password=password,
                 certfile=(self._certfile or None),
                 keyfile=(self._keyfile or None),
-                reconnect=True, stereo=False, debug=False,
+                reconnect=False, stereo=False, debug=False,
             )
             self._mumble = mumble
             try:
@@ -215,6 +215,19 @@ class MumbleNativeGateway(QObject):
             mumble.callbacks.set_callback(cb_sound, self._sound_received)
             mumble.start()
             mumble.is_ready()
+
+            # pymumble releases is_ready() BOTH on ServerSync (connected=2)
+            # and on socket/handshake failure (connected=3). Previously we
+            # treated either result as a successful Mumble connection.
+            state = int(getattr(mumble, "connected", 0))
+            session = getattr(mumble.users, "myself_session", None)
+            if state != 2 or session is None:
+                raise RuntimeError(
+                    "Mumble-Anmeldung nicht abgeschlossen "
+                    f"(Protokollstatus={state}, Session={session}). "
+                    "Status 3 bedeutet Verbindungsfehler. "
+                    "Bitte Serveradresse, Port, Zertifikat und Verbindung prüfen."
+                )
 
             if self._stop.is_set():
                 try:
