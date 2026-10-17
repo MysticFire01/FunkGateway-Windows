@@ -6,6 +6,7 @@ import os
 import sys
 import threading
 import time
+import queue
 from collections import deque
 from pathlib import Path
 
@@ -107,6 +108,12 @@ class MumbleNativeGateway(QObject):
         self._certfile = ""
         self._keyfile = ""
 
+        self._playback_enabled = False
+        self._playback_device = None
+        self._playback_queue = queue.Queue(maxsize=120)
+        self._playback_thread = None
+        self._playback_stop = threading.Event()
+
         self._speaker_lock = threading.Lock()
         self._speaker_times = {}
         self._speaker_modes = {}
@@ -152,7 +159,7 @@ class MumbleNativeGateway(QObject):
         self, host, port, nickname, password="", channel_path="",
         receive_to_radio=False, radio_input=None, radio_to_mumble=False,
         threshold_dbfs=-35.0, hang_ms=700, certfile="", keyfile="",
-        pc_ptt_enabled=False,
+        pc_ptt_enabled=False, playback_enabled=False, playback_device=None,
     ):
         self.disconnect()
         self._stop.clear()
@@ -165,6 +172,8 @@ class MumbleNativeGateway(QObject):
         self._keyfile = str(keyfile or "")
         self._pc_ptt_enabled = bool(pc_ptt_enabled)
         self._pc_ptt_active = False
+        self._playback_enabled = bool(playback_enabled)
+        self._playback_device = playback_device
 
         args = (
             str(host).strip(), int(port), str(nickname).strip(),
@@ -227,6 +236,8 @@ class MumbleNativeGateway(QObject):
 
             if self._capture_enabled or self._pc_ptt_enabled:
                 self._start_capture()
+            if self._playback_enabled:
+                self._start_playback()
 
             while not self._stop.is_set():
                 self._emit_speakers()
@@ -246,6 +257,7 @@ class MumbleNativeGateway(QObject):
             self.error.emit("Native Mumble: " + str(exc))
         finally:
             self._stop_capture()
+            self._stop_playback()
             self._connected = False
             self.connectedChanged.emit(False)
             self.status.emit("Native Mumble: getrennt")
@@ -261,6 +273,7 @@ class MumbleNativeGateway(QObject):
         self._stop.set()
         self._pc_ptt_active = False
         self._stop_capture()
+        self._stop_playback()
         mumble = self._mumble
         if mumble is not None:
             try:
@@ -305,6 +318,81 @@ class MumbleNativeGateway(QObject):
             self._start_capture()
         if not active and not self._capture_enabled and not self._pc_ptt_enabled:
             self._stop_capture()
+
+    def configure_playback(self, enabled, output_device=None):
+        self._playback_enabled = bool(enabled)
+        self._playback_device = output_device
+        if self._connected and self._playback_enabled:
+            self._start_playback()
+        else:
+            self._stop_playback()
+
+    def _start_playback(self):
+        self._stop_playback()
+        if not self._playback_enabled:
+            return
+        if sd is None:
+            self.error.emit("Mumble Ausgabe: sounddevice ist nicht verfügbar.")
+            return
+        if self._playback_device is None:
+            self.error.emit("Mumble Ausgabe: kein Ausgabegerät gewählt.")
+            return
+        self._playback_stop.clear()
+        while True:
+            try:
+                self._playback_queue.get_nowait()
+            except queue.Empty:
+                break
+        self._playback_thread = threading.Thread(
+            target=self._playback_worker, daemon=True
+        )
+        self._playback_thread.start()
+
+    def _stop_playback(self):
+        self._playback_stop.set()
+        thread = self._playback_thread
+        if thread and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=1.5)
+        self._playback_thread = None
+        while True:
+            try:
+                self._playback_queue.get_nowait()
+            except queue.Empty:
+                break
+
+    def _queue_playback(self, pcm):
+        if not self._playback_enabled or not pcm:
+            return
+        try:
+            self._playback_queue.put_nowait(bytes(pcm))
+        except queue.Full:
+            try:
+                self._playback_queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._playback_queue.put_nowait(bytes(pcm))
+            except queue.Full:
+                pass
+
+    def _playback_worker(self):
+        try:
+            with sd.RawOutputStream(
+                samplerate=48000,
+                channels=1,
+                dtype="int16",
+                device=self._playback_device,
+                latency="low",
+            ) as stream:
+                while not self._playback_stop.is_set() and not self._stop.is_set():
+                    try:
+                        pcm = self._playback_queue.get(timeout=0.1)
+                    except queue.Empty:
+                        continue
+                    if pcm:
+                        stream.write(pcm)
+        except Exception as exc:
+            self.error.emit("Mumble Ausgabe: " + str(exc))
 
     def register_current_user(self):
         if not self._connected or self._mumble is None:
@@ -450,15 +538,17 @@ class MumbleNativeGateway(QObject):
             self._speaker_times[name] = time.monotonic()
             self._speaker_modes[name] = speech_mode
 
-        if not self._receive_to_radio or self.tx_engine is None:
-            return
         try:
             pcm = bytes(soundchunk.pcm)
-            if pcm:
-                self.networkRxLevel.emit(self._dbfs(pcm))
+            if not pcm:
+                return
+            self.networkRxLevel.emit(self._dbfs(pcm))
+            if self._playback_enabled:
+                self._queue_playback(pcm)
+            if self._receive_to_radio and self.tx_engine is not None:
                 self.tx_engine.push_pcm(pcm, 48000, 1, "Mumble: " + name)
         except Exception as exc:
-            self.error.emit("Mumble → Funk: " + str(exc))
+            self.error.emit("Mumble Audio: " + str(exc))
 
     def _channel_path_by_id(self, cid):
         try:
@@ -501,12 +591,6 @@ class MumbleNativeGateway(QObject):
         except Exception:
             pass
 
-        myself_session = None
-        try:
-            myself_session = int(mumble.users.myself_session)
-        except Exception:
-            pass
-
         for _session, user in items:
             name = str(self._prop(user, "name", "") or "")
             if not name:
@@ -528,10 +612,6 @@ class MumbleNativeGateway(QObject):
                 "server_deaf": server_deaf,
                 "local_mute": local_mute,
                 "local_deaf": local_deaf,
-                "is_self": (
-                    myself_session is not None
-                    and int(_session) == myself_session
-                ),
                 "current_channel": (
                     current_channel_id is not None
                     and channel_id is not None
