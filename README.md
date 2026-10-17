@@ -613,3 +613,12 @@ users appear directly below their current channel with the live mouth icon next
 to their name. User counts update live without rebuilding the channel hierarchy,
 so expanded/collapsed branches stay stable. Double-clicking a channel joins it;
 double-clicking a user does not trigger a channel change.
+
+
+## Mumble server favorites 0.2.40
+
+The Mumble connection page now includes an editable favorites drop-down.
+`voice.mumble-funk.de:64738` is always pinned at the top and cannot be
+deleted. Several radio/community Mumble servers are provided as starter
+favorites, and users can add, edit and remove any number of their own entries.
+The complete favorites list is stored portably in `config.json`.
