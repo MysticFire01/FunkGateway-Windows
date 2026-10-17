@@ -102,6 +102,8 @@ class MumbleNativeGateway(QObject):
         self._capture_device = None
         self._capture_threshold = -35.0
         self._capture_hang_ms = 700
+        self._capture_confirm_ms = 100
+        self._capture_inhibit_until = 0.0
         self._capture_enabled = False
         self._pc_ptt_enabled = False
         self._pc_ptt_active = False
@@ -294,7 +296,13 @@ class MumbleNativeGateway(QObject):
     def set_receive_to_radio(self, enabled):
         self._receive_to_radio = bool(enabled)
 
-    def set_radio_to_mumble(self, enabled, input_device=None, threshold_dbfs=None, hang_ms=None):
+    def inhibit_radio_rx(self, milliseconds=900):
+        self._capture_inhibit_until = max(
+            self._capture_inhibit_until,
+            time.monotonic() + max(0, int(milliseconds)) / 1000.0,
+        )
+
+    def set_radio_to_mumble(self, enabled, input_device=None, threshold_dbfs=None, hang_ms=None, confirm_ms=None):
         self._capture_enabled = bool(enabled)
         if input_device is not None:
             self._capture_device = input_device
@@ -302,6 +310,8 @@ class MumbleNativeGateway(QObject):
             self._capture_threshold = float(threshold_dbfs)
         if hang_ms is not None:
             self._capture_hang_ms = max(0, int(hang_ms))
+        if confirm_ms is not None:
+            self._capture_confirm_ms = max(0, int(confirm_ms))
         if self._connected and self._capture_enabled:
             self._start_capture()
         else:
@@ -792,6 +802,7 @@ class MumbleNativeGateway(QObject):
             rate_state = None
             active = False
             last_hot = 0.0
+            hot_since = 0.0
             preroll = deque()
             preroll_samples = 0
             max_preroll_samples = max(1, int(rate * 0.08))
@@ -810,6 +821,13 @@ class MumbleNativeGateway(QObject):
                     self.radioRxLevel.emit(db)
                     now = time.monotonic()
                     hot = db >= self._capture_threshold
+
+                    if now < self._capture_inhibit_until and self._capture_enabled:
+                        hot = False
+                        hot_since = 0.0
+                        if active and not self._pc_ptt_active:
+                            active = False
+                            self.radioRxActivity.emit(False)
 
                     preroll.append(raw)
                     preroll_samples += len(raw) // 2
@@ -830,16 +848,23 @@ class MumbleNativeGateway(QObject):
                         else:
                             send_blocks.append(raw)
                     elif self._capture_enabled and hot and not self._self_mute_local:
+                        if not hot_since:
+                            hot_since = now
                         last_hot = now
-                        if not active:
+                        confirmed = (
+                            self._capture_confirm_ms <= 0
+                            or now - hot_since >= self._capture_confirm_ms / 1000.0
+                        )
+                        if confirmed and not active:
                             active = True
                             self.radioRxActivity.emit(True)
                             send_blocks.extend(preroll)
                             preroll.clear()
                             preroll_samples = 0
-                        else:
+                        elif active:
                             send_blocks.append(raw)
                     elif active:
+                        hot_since = 0.0
                         if self._capture_enabled:
                             send_blocks.append(raw)
                             if now - last_hot >= self._capture_hang_ms / 1000.0:
