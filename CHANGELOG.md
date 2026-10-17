@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.33 – Eigener Mumble-Sprechstatus orange
+
+- eigener Mumble-Teilnehmer wird in der Teilnehmerliste erkannt
+- eigener Mund ist beim Sprechen orange wie bei FRN
+- fremde Sprecher bleiben rot
+- Whisper bleibt blau
+- schweigende Teilnehmer bleiben grün
+- Tooltip unterscheidet „Du sprichst“ und „Spricht“
+
 ## 0.2.32 – Cryptography-Rust-Binding im Windows-Build
 
 - behebt beim Erstellen eines Mumble-Zertifikats:
