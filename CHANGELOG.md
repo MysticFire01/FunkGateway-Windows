@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.14 – TS3-Plugin Restart/CT-State Fix
+
+- behebt festhängende TS3-Audiobrücke nach Aus-/Einschalten
+- neuer START/AUDIO-Zustand verwirft ein altes „Continuous Transmission wiederherstellen“
+- STOP verwirft ein eventuell noch wartendes „Continuous Transmission einschalten“
+- verhindert, dass TeamSpeak beim Neustart der Brücke sofort wieder aus dem Sendebetrieb fällt
+- relevant besonders nach Live-Umschalten der Funk-RX→TeamSpeak-Weiterleitung
+
 ## 0.2.13 – TeamSpeak-Audio nur bei echtem Funk-RX
 
 - TS3-Plugin-Brücke bleibt im Gateway nur bereit, statt dauerhaft Audio zu senden
