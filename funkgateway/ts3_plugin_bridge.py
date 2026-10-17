@@ -17,6 +17,8 @@ TYPE_AUDIO = 1
 TYPE_START = 2
 TYPE_STOP = 3
 TYPE_PING = 4
+TYPE_VERSION = 5
+PLUGIN_VERSION = "0.1.1"
 TARGET_RATE = 48000
 FRAME_SAMPLES = 960  # 20 ms @ 48 kHz
 
@@ -75,6 +77,21 @@ class TeamSpeakPluginAudioBridge:
             return data.startswith(b"FGA1")
         except Exception:
             return False
+        finally:
+            sock.close()
+
+    def plugin_version(self, timeout=0.25):
+        """Return running plugin version, or None for old/unreachable plugins."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.settimeout(float(timeout))
+            sock.sendto(self._packet(TYPE_VERSION), ("127.0.0.1", PORT))
+            data, _addr = sock.recvfrom(128)
+            if not data.startswith(b"FGV1"):
+                return None
+            return data[4:].decode("ascii", errors="ignore").strip() or None
+        except Exception:
+            return None
         finally:
             sock.close()
 
