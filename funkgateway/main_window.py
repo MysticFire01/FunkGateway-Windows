@@ -2284,16 +2284,35 @@ class MainWindow(QMainWindow):
         if hasattr(self, "mumble_tabs"):
             self.mumble_tabs.setCurrentIndex(0)
 
+    def _retry_mumble_channels(self):
+        """Wait for delayed initial channel data without losing a previous tree."""
+        if not self.mumble_native.connected:
+            return
+        self._refresh_mumble_native_channels()
+        if self.mumble_native.channel_snapshot():
+            return
+        attempts = getattr(self, "_mumble_channel_refresh_attempts", 0) + 1
+        self._mumble_channel_refresh_attempts = attempts
+        if attempts <= 15:
+            QTimer.singleShot(1000, self._retry_mumble_channels)
+        else:
+            self.mumble_native_status_label.setText(
+                "Native Mumble: keine Channel-Daten empfangen. "
+                "Bitte Verbindung oder Logs prüfen."
+            )
+
     def _refresh_mumble_native_channels(self):
         if not hasattr(self, "mumble_channel_tree"):
             return
         channels = self.mumble_native.channel_snapshot()
-        self.mumble_channel_tree.clear()
         if not channels:
             self.mumble_native_status_label.setText(
-                "Native Mumble: keine Channel-Liste verfügbar"
+                "Native Mumble: warte auf Channel-Daten …"
+                if self.mumble_native.connected else "Native Mumble: nicht verbunden"
             )
             return
+        self.mumble_channel_tree.clear()
+        self._mumble_channel_refresh_attempts = 0
 
         by_id = {}
         roots = []
@@ -2549,7 +2568,8 @@ class MainWindow(QMainWindow):
         if connected:
             self.status_mumble.setText("Mumble: verbunden")
             self._update_live_status()
-            QTimer.singleShot(600, self._refresh_mumble_native_channels)
+            self._mumble_channel_refresh_attempts = 0
+            QTimer.singleShot(600, self._retry_mumble_channels)
             if self._mode() == "gateway":
                 self._ensure_mumble_radio_tx_engine()
         else:
