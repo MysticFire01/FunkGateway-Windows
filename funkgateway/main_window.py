@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QTabWidget, QGroupBox, QFormLayout,
     QCheckBox, QScrollArea, QPlainTextEdit, QLineEdit, QDoubleSpinBox, QSpinBox,
     QInputDialog, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView
+    QAbstractItemView, QTreeWidget, QTreeWidgetItem
 )
 
 from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
@@ -24,6 +24,7 @@ from .ptt import DryPTT, SerialPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
 from .integrations.mumble_windows import MumbleWindowsBackend
 from .integrations.mumble_native import MumbleNativeGateway
+from .integrations.mumble_public import MumblePublicServerLoader
 from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_devices
 from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge, PLUGIN_VERSION as TS_PLUGIN_VERSION
 from .tx_audio import AudioTxEngine, SoundInputTxSource
@@ -73,6 +74,9 @@ class MainWindow(QMainWindow):
 
         self.ts_client = TeamSpeakClientQuery()
         self.mumble_backend = MumbleWindowsBackend()
+        self._mumble_public_thread = None
+        self._mumble_public_worker = None
+        self._mumble_public_servers = []
         self.ts_last_status = None
         self.ts_last_speakers = []
         self.ts_last_channel = None
@@ -688,6 +692,75 @@ class MainWindow(QMainWindow):
         cf.addStretch(1)
         self.mumble_tabs.addTab(mw, "Channels")
 
+        # ---------------------------------------------------- Serverliste
+        mw = QWidget()
+        sv = QVBoxLayout(mw)
+        sv.addWidget(QLabel("<b>Öffentliche Mumble-Server</b>"))
+
+        server_filters = QWidget()
+        sf = QHBoxLayout(server_filters)
+        sf.setContentsMargins(0, 0, 0, 0)
+        self.mumble_public_search = QLineEdit()
+        self.mumble_public_search.setPlaceholderText("Server, Host, Region oder Land suchen …")
+        self.mumble_public_country = QComboBox()
+        self.mumble_public_country.addItem("Alle Länder", "")
+        self.mumble_public_sort = QComboBox()
+        self.mumble_public_sort.addItem("Innerhalb Land: Name A–Z", "name")
+        self.mumble_public_sort.addItem("Innerhalb Land: Benutzerzahl", "users")
+        self.mumble_public_sort.addItem("Innerhalb Land: Ping", "ping")
+        self.mumble_public_sort.addItem("Innerhalb Land: Auslastung", "load")
+        sf.addWidget(self.mumble_public_search, 2)
+        sf.addWidget(self.mumble_public_country, 1)
+        sf.addWidget(self.mumble_public_sort, 1)
+        sv.addWidget(server_filters)
+
+        public_actions = QWidget()
+        pa = QHBoxLayout(public_actions)
+        pa.setContentsMargins(0, 0, 0, 0)
+        self.mumble_public_refresh_btn = QPushButton("Öffentliche Serverliste laden / aktualisieren")
+        self.mumble_public_use_btn = QPushButton("Gewählten Server übernehmen")
+        self.mumble_public_use_btn.setEnabled(False)
+        pa.addWidget(self.mumble_public_refresh_btn)
+        pa.addWidget(self.mumble_public_use_btn)
+        sv.addWidget(public_actions)
+
+        self.mumble_public_status = QLabel("Noch nicht geladen")
+        sv.addWidget(self.mumble_public_status)
+
+        self.mumble_public_tree = QTreeWidget()
+        self.mumble_public_tree.setColumnCount(5)
+        self.mumble_public_tree.setHeaderLabels(
+            ["Server", "Adresse", "Benutzer", "Ping", "Region"]
+        )
+        self.mumble_public_tree.header().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        self.mumble_public_tree.header().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.mumble_public_tree.header().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.mumble_public_tree.header().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.mumble_public_tree.setAlternatingRowColors(True)
+        self.mumble_public_tree.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        sv.addWidget(self.mumble_public_tree)
+
+        self.mumble_public_search.textChanged.connect(self._render_mumble_public_servers)
+        self.mumble_public_country.currentIndexChanged.connect(self._render_mumble_public_servers)
+        self.mumble_public_sort.currentIndexChanged.connect(self._render_mumble_public_servers)
+        self.mumble_public_refresh_btn.clicked.connect(self._load_mumble_public_servers)
+        self.mumble_public_use_btn.clicked.connect(self._use_selected_mumble_public_server)
+        self.mumble_public_tree.itemSelectionChanged.connect(self._mumble_public_selection_changed)
+        self.mumble_public_tree.itemDoubleClicked.connect(
+            lambda _item, _col: self._use_selected_mumble_public_server()
+        )
+        self.mumble_tabs.addTab(mw, "Serverliste")
+
         # ------------------------------------------------------- Teilnehmer
         mw = QWidget()
         pv = QVBoxLayout(mw)
@@ -890,6 +963,191 @@ class MainWindow(QMainWindow):
             if self._mumble_owns_tx_engine:
                 self.tx_audio_engine.stop()
                 self._mumble_owns_tx_engine = False
+
+    @staticmethod
+    def _country_flag(code):
+        code = str(code or "").upper()
+        if len(code) != 2 or not code.isalpha():
+            return "🌐"
+        try:
+            return "".join(chr(127397 + ord(ch)) for ch in code)
+        except Exception:
+            return "🌐"
+
+    def _load_mumble_public_servers(self):
+        if self._mumble_public_thread is not None:
+            return
+        self.mumble_public_refresh_btn.setEnabled(False)
+        self.mumble_public_status.setText("Öffentliche Serverliste wird geladen …")
+
+        thread = QThread(self)
+        worker = MumblePublicServerLoader()
+        self._mumble_public_thread = thread
+        self._mumble_public_worker = worker
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.loaded.connect(self._mumble_public_loaded)
+        worker.error.connect(self._mumble_public_error)
+        worker.progress.connect(self._mumble_public_progress)
+        worker.loaded.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._mumble_public_finished)
+        thread.start()
+
+    def _mumble_public_progress(self, done, total):
+        if total:
+            self.mumble_public_status.setText(
+                f"Live-Status wird abgefragt: {int(done)}/{int(total)} Server"
+            )
+
+    def _mumble_public_loaded(self, servers):
+        self._mumble_public_servers = list(servers or [])
+        current_country = self.mumble_public_country.currentData() or ""
+        countries = sorted(
+            {
+                (str(s.get("country") or "Unbekannt"), str(s.get("country_code") or ""))
+                for s in self._mumble_public_servers
+            },
+            key=lambda item: item[0].casefold(),
+        )
+        self.mumble_public_country.blockSignals(True)
+        self.mumble_public_country.clear()
+        self.mumble_public_country.addItem("Alle Länder", "")
+        for country, code in countries:
+            self.mumble_public_country.addItem(
+                f"{self._country_flag(code)} {country}", country
+            )
+        idx = self.mumble_public_country.findData(current_country)
+        if idx >= 0:
+            self.mumble_public_country.setCurrentIndex(idx)
+        self.mumble_public_country.blockSignals(False)
+        self._render_mumble_public_servers()
+
+    def _mumble_public_error(self, message):
+        self.mumble_public_status.setText("Fehler beim Laden: " + str(message))
+        QMessageBox.warning(
+            self, "Mumble Serverliste",
+            "Die öffentliche Mumble-Serverliste konnte nicht geladen werden.\n\n"
+            + str(message)
+        )
+
+    def _mumble_public_finished(self):
+        self._mumble_public_thread = None
+        self._mumble_public_worker = None
+        if hasattr(self, "mumble_public_refresh_btn"):
+            self.mumble_public_refresh_btn.setEnabled(True)
+
+    def _render_mumble_public_servers(self, *_args):
+        if not hasattr(self, "mumble_public_tree"):
+            return
+        query = self.mumble_public_search.text().strip().casefold()
+        selected_country = self.mumble_public_country.currentData() or ""
+        sort_mode = self.mumble_public_sort.currentData() or "name"
+
+        rows = []
+        for server in self._mumble_public_servers:
+            if selected_country and server.get("country") != selected_country:
+                continue
+            haystack = " ".join(
+                str(server.get(key) or "")
+                for key in ("name", "host", "country", "region", "provider")
+            ).casefold()
+            if query and query not in haystack:
+                continue
+            rows.append(server)
+
+        grouped = {}
+        for server in rows:
+            country = str(server.get("country") or "Unbekannt")
+            grouped.setdefault(country, []).append(server)
+
+        def server_key(server):
+            if sort_mode == "users":
+                users = server.get("users")
+                return (-(users if isinstance(users, int) else -1), str(server.get("name") or "").casefold())
+            if sort_mode == "ping":
+                ping = server.get("ping_ms")
+                return ((ping if isinstance(ping, (int, float)) else 999999), str(server.get("name") or "").casefold())
+            if sort_mode == "load":
+                users = server.get("users")
+                maximum = server.get("max_users")
+                load = (float(users) / float(maximum)) if isinstance(users, int) and isinstance(maximum, int) and maximum > 0 else -1.0
+                return (-load, str(server.get("name") or "").casefold())
+            return (str(server.get("name") or "").casefold(),)
+
+        self.mumble_public_tree.clear()
+        visible_count = 0
+        for country in sorted(grouped, key=str.casefold):
+            country_servers = sorted(grouped[country], key=server_key)
+            code = str(country_servers[0].get("country_code") or "") if country_servers else ""
+            total_users = sum(
+                s.get("users") for s in country_servers if isinstance(s.get("users"), int)
+            )
+            parent = QTreeWidgetItem([
+                f"{self._country_flag(code)} {country} ({len(country_servers)} Server · {total_users} Nutzer)",
+                "", "", "", ""
+            ])
+            parent.setFirstColumnSpanned(True)
+            self.mumble_public_tree.addTopLevelItem(parent)
+
+            for server in country_servers:
+                users = server.get("users")
+                maximum = server.get("max_users")
+                if isinstance(users, int):
+                    user_text = str(users)
+                    if isinstance(maximum, int) and maximum > 0:
+                        user_text += f"/{maximum}"
+                else:
+                    user_text = "—"
+                ping = server.get("ping_ms")
+                ping_text = f"{float(ping):.0f} ms" if isinstance(ping, (int, float)) else "—"
+                host = str(server.get("host") or "")
+                port = int(server.get("port") or 64738)
+                child = QTreeWidgetItem([
+                    str(server.get("name") or host),
+                    f"{host}:{port}",
+                    user_text,
+                    ping_text,
+                    str(server.get("region") or ""),
+                ])
+                child.setData(0, Qt.ItemDataRole.UserRole, server)
+                parent.addChild(child)
+                visible_count += 1
+
+            parent.setExpanded(
+                bool(selected_country)
+                or country.casefold() == "germany"
+                or (query and len(grouped) <= 5)
+            )
+
+        self.mumble_public_status.setText(
+            f"{visible_count} öffentliche Server angezeigt"
+            + (f" · {len(self._mumble_public_servers)} insgesamt" if self._mumble_public_servers else "")
+        )
+        self.mumble_public_use_btn.setEnabled(False)
+
+    def _mumble_public_selection_changed(self):
+        item = self.mumble_public_tree.currentItem()
+        server = item.data(0, Qt.ItemDataRole.UserRole) if item is not None else None
+        self.mumble_public_use_btn.setEnabled(isinstance(server, dict))
+
+    def _use_selected_mumble_public_server(self):
+        item = self.mumble_public_tree.currentItem()
+        if item is None:
+            return
+        server = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(server, dict):
+            return
+        self.mumble_server.setText(str(server.get("host") or ""))
+        self.mumble_port.setValue(int(server.get("port") or 64738))
+        self.mumble_public_status.setText(
+            "Übernommen: " + str(server.get("name") or server.get("host") or "")
+        )
+        # Bring the operator back to the connection page.
+        if hasattr(self, "mumble_tabs"):
+            self.mumble_tabs.setCurrentIndex(0)
 
     def _refresh_mumble_native_channels(self):
         paths = self.mumble_native.channel_paths()
@@ -2877,6 +3135,11 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.mumble_native.disconnect()
+        except Exception:
+            pass
+        try:
+            if self._mumble_public_thread is not None:
+                self._mumble_public_thread.requestInterruption()
         except Exception:
             pass
         try:
