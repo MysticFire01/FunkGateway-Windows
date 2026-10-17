@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.16 – TeamSpeak vor Plugin-Update sauber beenden
+
+- vor Installation/Aktualisierung des TS3-Plugins wird geprüft, ob TeamSpeak 3 läuft
+- Ja/Nein-Abfrage „TeamSpeak jetzt automatisch schließen?“
+- bei Ja wird zuerst ein normales Schließen des TeamSpeak-Hauptfensters versucht
+- FunkGateway trennt vorher seine ClientQuery-/Audio-Brücken sauber
+- wenn TeamSpeak nicht normal beendet werden kann, separate Rückfrage zum erzwungenen Beenden
+- ohne Zustimmung oder bei fehlgeschlagenem Beenden wird der Plugin-Installer nicht gestartet
+- nach Start des Installers Hinweis, TeamSpeak anschließend wieder zu starten
+
 ## 0.2.15 – TeamSpeak-Plugin installieren/aktualisieren
 
 - FunkGateway kann die mitgelieferte .ts3_plugin-Datei selbst starten
