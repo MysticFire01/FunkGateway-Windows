@@ -102,11 +102,12 @@ jobs:
       - name: Validate packaged certificate backend
         shell: pwsh
         run: |
-          $proc = Start-Process -FilePath "dist\FunkGateway-Windows\FunkGateway-Windows.exe" -ArgumentList "--self-test-cert" -Wait -PassThru -NoNewWindow
-          Write-Host "Certificate self-test exit code: $($proc.ExitCode)"
-          if ($proc.ExitCode -ne 0) {
-            throw "Packaged FunkGateway certificate self-test failed"
+          $output = & "dist\FunkGateway-Windows\FunkGateway-Windows.exe" --self-test-cert 2>&1 | Out-String
+          Write-Host $output
+          if ($output -notmatch '"ok"\s*:\s*true') {
+            throw "Packaged FunkGateway certificate self-test failed: ok=true missing"
           }
+          Write-Host "Packaged certificate backend OK"
 
       - name: Build release ZIP and checksums
         shell: pwsh
@@ -143,7 +144,7 @@ jobs:
           @'
           # FunkGateway Windows 0.2.45 Preview
 
-          Zertifikats-Selbsttest korrigiert: echter Exitcode der Windows-GUI-EXE wird ausgewertet.
+          Zertifikats-Runtimefix jetzt mit robuster JSON-Selbsttest-Auswertung.
 
           ## Enthalten
           - Windows 10/11 x64
