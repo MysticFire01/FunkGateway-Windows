@@ -19,7 +19,7 @@ from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
 import funkgateway.updates as updates
 from .global_hotkey import GlobalPttHotkey
 from .hotkeys import LocalPttHotkey, ModifierHoldWatcher
-from .integrations.frn_panel import FrnPanel
+from .integrations.frn_panel import FrnPanel, HotkeyCaptureButton
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
 from .ptt import DryPTT, SerialPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
@@ -154,6 +154,7 @@ class MainWindow(QMainWindow):
         self._apply_mode()
         self._apply_theme_from_ui()
         self._configure_hotkey()
+        self._configure_mumble_hotkey()
         self._update_live_status()
 
     # ------------------------------------------------------------------ UI
@@ -839,10 +840,24 @@ class MainWindow(QMainWindow):
         self.mumble_net_to_radio = QCheckBox("Mumble → Funk / RTS-DTR-PTT")
         self.mumble_net_to_radio.toggled.connect(self._mumble_net_to_radio_changed)
         self.mumble_pc_ptt_enabled = QCheckBox("PC-User: Mikrofon-PTT für Mumble")
+        self.mumble_pc_ptt_enabled.toggled.connect(self._configure_mumble_hotkey)
         self.mumble_pc_ptt_btn = QPushButton("Mumble PTT halten")
         self.mumble_pc_ptt_btn.setMinimumHeight(42)
         self.mumble_pc_ptt_btn.pressed.connect(self._mumble_pc_ptt_press)
         self.mumble_pc_ptt_btn.released.connect(self._mumble_pc_ptt_release)
+
+        self.mumble_ptt_hotkey = HotkeyCaptureButton()
+        self.mumble_ptt_hotkey.set_hotkey("F10")
+        self.mumble_ptt_hotkey.setToolTip(
+            "Eigener Mumble-PTT-Hotkey. Er ist unabhängig vom FRN-Hotkey."
+        )
+        self.mumble_ptt_hotkey.hotkeyChanged.connect(self._configure_mumble_hotkey)
+        self.mumble_ptt_hotkey_scope = QComboBox()
+        self.mumble_ptt_hotkey_scope.addItem("Nur in FunkGateway", "local")
+        self.mumble_ptt_hotkey_scope.addItem("Systemweit", "global")
+        self.mumble_ptt_hotkey_scope.currentIndexChanged.connect(self._configure_mumble_hotkey)
+        self.mumble_ptt_hotkey_status = QLabel("Mumble-Hotkey: aus")
+        self.mumble_ptt_hotkey_status.setWordWrap(True)
         self.mumble_rx_input = QComboBox()
         self.mumble_rx_input.setMinimumWidth(300)
         self.mumble_rx_refresh_btn = QPushButton("Funk-RX Audiogeräte neu laden")
@@ -882,6 +897,9 @@ class MainWindow(QMainWindow):
         af.addRow("", self.mumble_net_to_radio)
         af.addRow("", self.mumble_pc_ptt_enabled)
         af.addRow("", self.mumble_pc_ptt_btn)
+        af.addRow("Mumble PTT-Hotkey:", self.mumble_ptt_hotkey)
+        af.addRow("Hotkey-Bereich:", self.mumble_ptt_hotkey_scope)
+        af.addRow("", self.mumble_ptt_hotkey_status)
         af.addRow("Funk-RX Eingang:", self.mumble_rx_input)
         af.addRow("", self.mumble_rx_refresh_btn)
         af.addRow("RX-Schwellwert:", self.mumble_rx_threshold)
@@ -1345,6 +1363,7 @@ class MainWindow(QMainWindow):
                 connected and self._mode() == "pc"
                 and self.mumble_pc_ptt_enabled.isChecked()
             )
+        self._configure_mumble_hotkey()
         if connected:
             self.status_mumble.setText("Mumble: Native Gateway verbunden")
             QTimer.singleShot(600, self._refresh_mumble_native_channels)
@@ -2144,6 +2163,16 @@ class MainWindow(QMainWindow):
         self.global_hotkey.released.connect(self._hotkey_released)
         self.global_hotkey.statusChanged.connect(self.frn_panel.set_ptt_hotkey_status)
 
+        # Mumble gets its own completely independent PTT hotkeys so FRN and
+        # Mumble can stay connected at the same time with different keys.
+        self.mumble_local_hotkey = LocalPttHotkey(self)
+        self.mumble_local_hotkey.pressed.connect(self._mumble_hotkey_pressed)
+        self.mumble_local_hotkey.released.connect(self._mumble_hotkey_released)
+        self.mumble_global_hotkey = GlobalPttHotkey(self)
+        self.mumble_global_hotkey.pressed.connect(self._mumble_hotkey_pressed)
+        self.mumble_global_hotkey.released.connect(self._mumble_hotkey_released)
+        self.mumble_global_hotkey.statusChanged.connect(self._set_mumble_hotkey_status)
+
         self.frn_panel.connectedChanged.connect(lambda _yes: self._configure_hotkey())
 
     def _configure_hotkey(self, *_args):
@@ -2166,6 +2195,53 @@ class MainWindow(QMainWindow):
         # may miss very short modifier presses.
         self.local_hotkey.set_hotkey(hotkey)
         self.frn_panel.set_ptt_hotkey_status("lokal aktiv · direkt/eventgesteuert")
+
+    def _set_mumble_hotkey_status(self, text):
+        if hasattr(self, "mumble_ptt_hotkey_status"):
+            self.mumble_ptt_hotkey_status.setText("Mumble-Hotkey: " + str(text))
+
+    def _configure_mumble_hotkey(self, *_args):
+        if not hasattr(self, "mumble_local_hotkey"):
+            return
+        self.mumble_local_hotkey.set_hotkey("")
+        self.mumble_global_hotkey.stop()
+
+        if not hasattr(self, "mumble_ptt_hotkey"):
+            return
+        hotkey = self.mumble_ptt_hotkey.hotkey().strip()
+        enabled = bool(
+            hasattr(self, "mumble_pc_ptt_enabled")
+            and self.mumble_pc_ptt_enabled.isChecked()
+        )
+        if not enabled or not hotkey:
+            self._set_mumble_hotkey_status("aus")
+            return
+
+        # Separate shortcuts are recommended when FRN and Mumble are both used.
+        try:
+            frn_key = self.frn_panel.ptt_hotkey_text().strip()
+        except Exception:
+            frn_key = ""
+        if frn_key and frn_key == hotkey:
+            self._set_mumble_hotkey_status(
+                "Hinweis: identisch mit FRN-Hotkey – besser unterschiedliche Tasten verwenden"
+            )
+
+        scope = self.mumble_ptt_hotkey_scope.currentData() or "local"
+        if scope == "global":
+            self.mumble_global_hotkey.set_hotkey(hotkey)
+            if not self.mumble_global_hotkey.start():
+                self._set_mumble_hotkey_status("systemweit nicht verfügbar")
+            return
+
+        self.mumble_local_hotkey.set_hotkey(hotkey)
+        self._set_mumble_hotkey_status("lokal aktiv · unabhängig von FRN")
+
+    def _mumble_hotkey_pressed(self):
+        self._mumble_pc_ptt_press()
+
+    def _mumble_hotkey_released(self):
+        self._mumble_pc_ptt_release()
 
     def _gateway_ptt_port_changed(self, *_args):
         if not hasattr(self, "gateway_ptt_port"):
@@ -3381,6 +3457,13 @@ class MainWindow(QMainWindow):
                     self.mumble_rx_hang.setValue(int(mumble_cfg.get("rx_hang_ms", 700)))
                     if hasattr(self, "mumble_pc_ptt_enabled"):
                         self.mumble_pc_ptt_enabled.setChecked(bool(mumble_cfg.get("pc_ptt_enabled", False)))
+                    if hasattr(self, "mumble_ptt_hotkey"):
+                        self.mumble_ptt_hotkey.set_hotkey(str(mumble_cfg.get("ptt_hotkey", "F10")))
+                        scope_idx = self.mumble_ptt_hotkey_scope.findData(
+                            str(mumble_cfg.get("ptt_hotkey_scope", "local"))
+                        )
+                        if scope_idx >= 0:
+                            self.mumble_ptt_hotkey_scope.setCurrentIndex(scope_idx)
                     wanted_cert = str(mumble_cfg.get("certificate_id", ""))
                     if wanted_cert and hasattr(self, "mumble_cert_select"):
                         for cert_idx in range(self.mumble_cert_select.count()):
@@ -3491,6 +3574,8 @@ class MainWindow(QMainWindow):
                 "rx_threshold": self.mumble_rx_threshold.value() if hasattr(self, "mumble_rx_threshold") else -35.0,
                 "rx_hang_ms": self.mumble_rx_hang.value() if hasattr(self, "mumble_rx_hang") else 700,
                 "pc_ptt_enabled": self.mumble_pc_ptt_enabled.isChecked() if hasattr(self, "mumble_pc_ptt_enabled") else False,
+                "ptt_hotkey": self.mumble_ptt_hotkey.hotkey() if hasattr(self, "mumble_ptt_hotkey") else "F10",
+                "ptt_hotkey_scope": self.mumble_ptt_hotkey_scope.currentData() if hasattr(self, "mumble_ptt_hotkey_scope") else "local",
                 "certificate_id": (
                     str(self._selected_mumble_certificate().get("id") or "")
                     if hasattr(self, "mumble_cert_select") and self._selected_mumble_certificate()
@@ -3524,6 +3609,10 @@ class MainWindow(QMainWindow):
         self.ptt_guard.stop()
         try:
             self.global_hotkey.stop()
+        except Exception:
+            pass
+        try:
+            self.mumble_global_hotkey.stop()
         except Exception:
             pass
         try:
