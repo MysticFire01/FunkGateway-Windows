@@ -336,3 +336,10 @@ The native TeamSpeak bridge no longer forwards the selected radio input
 continuously. It stays ready while the gateway is running and sends PCM only
 while the independent radio RX detector reports active reception. Commander
 automation remains a separate option.
+
+
+## TS3 bridge restart state fix 0.2.14
+
+The TeamSpeak plugin now resolves pending Continuous Transmission state changes
+deterministically across live bridge restarts. A fresh START/AUDIO supersedes an
+old restore request, while STOP cancels a stale enable request.
