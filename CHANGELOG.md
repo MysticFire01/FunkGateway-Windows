@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.21 Portable Preview
+
+- korrigiert den leeren PC-Stadtwert auf exakt `CT=- -`
+- kein führendes Leerzeichen mehr vor `- -`
+- bereits eingetragenes `- -` bleibt exakt erhalten
+- Stadtwerte werden weiterhin als `Stadt - -` gesendet
+- behebt Server-`BLOCK` bei leerem Stadtfeld auf streng prüfenden FRN-Servern
+- alle bisherigen CL/BC-, Audio-, Raumwechsel-, Updater- und Onedir-Fixes bleiben erhalten
+
 ## 0.1.20 Portable Preview
 
 - behebt `AL=BLOCK` auf Servern, die das FRN-`CT`-Feld validieren
