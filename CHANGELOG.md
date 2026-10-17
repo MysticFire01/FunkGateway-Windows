@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2 Portable Preview
+
+- Release-ZIP enthält niemals eine fertige `config.json`
+- `config.json` wird ausschließlich vom Programm selbst erzeugt
+- bestehende portable Konfiguration bleibt beim Drüberentpacken neuer Versionen erhalten
+- `config` und `logs` bleiben als portable Datenordner vorgesehen
+- Versionsstand auf 0.1.2 aktualisiert
+
 ## 0.1.1 Portable Preview
 
 - Windows-Version vollständig auf portablen Datenpfad umgestellt
