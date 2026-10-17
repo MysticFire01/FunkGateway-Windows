@@ -29,6 +29,7 @@ class RadioRxDetector(QObject):
         super().__init__(parent)
         self._thread = None
         self._stop = threading.Event()
+        self._inhibit_until = 0.0
         self._active = False
         self._device = None
         self._threshold = -35.0
@@ -169,6 +170,12 @@ class RadioAudioBridge(QObject):
         self._thread = None
         self._stop = threading.Event()
 
+    def inhibit(self, milliseconds=900):
+        self._inhibit_until = max(
+            self._inhibit_until,
+            time.monotonic() + max(0, int(milliseconds)) / 1000.0,
+        )
+
     @property
     def running(self):
         return bool(self._thread and self._thread.is_alive())
@@ -214,6 +221,8 @@ class RadioAudioBridge(QObject):
                     raw = bytes(data)
                     if in_rate != out_rate:
                         raw, state = audioop.ratecv(raw, 2, 1, in_rate, out_rate, state)
+                    if time.monotonic() < self._inhibit_until:
+                        raw = b"\x00" * len(raw)
                     out.write(raw)
         except Exception as exc:
             self.error.emit(str(exc))
