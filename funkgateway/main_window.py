@@ -2477,6 +2477,10 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         try:
+            self._mumble_pc_ptt_release()
+        except Exception:
+            pass
+        try:
             if self.gateway_ptt is not None:
                 self.gateway_ptt.key(False)
         except Exception:
