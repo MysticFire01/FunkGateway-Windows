@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.48 – Offizielle Mumble-Serverliste unter Windows robuster laden
+
+- offizieller Abruf von publist.mumble.info verwendet jetzt explizit den mitgelieferten certifi-CA-Store
+- behebt typische HTTPS/TLS-Probleme im gepackten PyInstaller-Windows-Build
+- User-Agent lehnt sich an den aktuellen Mumble-Client 1.5.939 an
+- bei Fallback wird der konkrete Fehler der offiziellen Liste sichtbar angezeigt
+- Tooltip zeigt ebenfalls den genauen Grund des Fallbacks
+- Fallback bleibt als Notlösung erhalten, ist aber weiterhin klar als ca. 50 Einträge begrenzt markiert
+- Ziel: vollständige offizielle Mumble-Serverliste statt der 50er mumble.com-Fallback-Liste
+
 ## 0.2.47 – Mumble-Zertifikate exportieren
 
 - ausgewähltes Mumble-Zertifikat kann jetzt wieder exportiert werden
