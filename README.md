@@ -272,3 +272,12 @@ the read-only path is verified.
 The Windows TeamSpeak page now shows server identity and the local TS client,
 loads visible channels, can move the local client to a selected channel and can
 toggle Channel Commander. Active speakers are presented as a live list.
+
+
+## TeamSpeak Funk-RX commander automation 0.2.7
+
+A cross-platform radio-RX activity detector can monitor a selected audio input.
+In gateway/radio-parrot mode it can automatically toggle TeamSpeak Channel
+Commander: active RX enables Commander, silence disables it after the configured
+hang time. This establishes control-state coupling; actual radio-audio routing
+into TeamSpeak is implemented separately.
