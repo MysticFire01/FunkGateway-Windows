@@ -630,3 +630,16 @@ PC-user mode now exposes a dedicated Mumble PTT button beside the FRN PTT in
 the permanent top bar. It appears only while the native Mumble connection is
 actually connected, and uses the same push-to-talk path as the Mumble
 integration page. FRN and Mumble PTT/hotkeys remain independent.
+
+
+## Mumble hardening 0.2.42
+
+The certificate page now performs an in-memory cryptography self-test using the
+same RSA/X.509/signing path as real certificate creation. The Windows build also
+runs this self-test before PyInstaller and collects cryptography submodules while
+continuing to bundle the native Rust extension explicitly.
+
+The public Mumble server browser now reports whether its data came from the
+official Mumble public-list service or from the known smaller fallback source.
+If the fallback is used, the UI clearly warns that the result is limited to
+roughly 50 entries instead of making the list look complete.
