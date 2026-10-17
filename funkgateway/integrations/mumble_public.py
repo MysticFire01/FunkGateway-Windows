@@ -6,6 +6,8 @@ import struct
 import time
 import urllib.request
 import ssl
+import shutil
+import subprocess
 import xml.etree.ElementTree as ET
 
 import certifi
@@ -167,11 +169,59 @@ def _download(url: str, accept: str) -> tuple[bytes, object]:
         return response.read(), response.headers
 
 
-def _load_official_list() -> list[dict]:
-    raw, _headers = _download_qt(
-        OFFICIAL_PUBLIC_LIST_URL,
-        "application/xml,text/xml;q=0.9,*/*;q=0.8",
+def _download_official_via_curl(url: str) -> tuple[bytes, dict]:
+    """Fallback for Windows builds where QtNetwork cannot fetch publist.
+
+    Windows 10/11 ship curl.exe. We use HTTP/1.1 explicitly because the public
+    list service has historically been picky about transfer framing.
+    """
+    exe = shutil.which("curl.exe") or shutil.which("curl")
+    if not exe:
+        raise RuntimeError("curl.exe nicht gefunden")
+    result = subprocess.run(
+        [
+            exe, "--silent", "--show-error", "--fail",
+            "--location", "--http1.1",
+            "--connect-timeout", "10", "--max-time", "25",
+            "--user-agent", "Mumble/1.5.939 FunkGateway-Windows",
+            "--header", "Accept: application/xml,text/xml;q=0.9,*/*;q=0.8",
+            url,
+        ],
+        capture_output=True,
+        timeout=30,
     )
+    if result.returncode != 0:
+        err = (result.stderr or b"").decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"curl Fehler {result.returncode}: {err}")
+    if not result.stdout:
+        raise RuntimeError("curl lieferte keine Daten")
+    return bytes(result.stdout), {}
+
+
+def _load_official_list() -> list[dict]:
+    errors = []
+    raw = b""
+    try:
+        raw, _headers = _download_qt(
+            OFFICIAL_PUBLIC_LIST_URL,
+            "application/xml,text/xml;q=0.9,*/*;q=0.8",
+        )
+    except Exception as exc:
+        errors.append("QtNetwork: " + str(exc))
+        try:
+            raw, _headers = _download_official_via_curl(
+                OFFICIAL_PUBLIC_LIST_URL
+            )
+        except Exception as curl_exc:
+            errors.append("curl: " + str(curl_exc))
+            try:
+                raw, _headers = _download(
+                    OFFICIAL_PUBLIC_LIST_URL,
+                    "application/xml,text/xml;q=0.9,*/*;q=0.8",
+                )
+            except Exception as urllib_exc:
+                errors.append("urllib: " + str(urllib_exc))
+                raise RuntimeError(" | ".join(errors))
     root = ET.fromstring(raw)
     servers = []
     for elem in root.iter("server"):
