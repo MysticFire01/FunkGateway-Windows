@@ -128,7 +128,7 @@ class FrnPanel(QWidget):
         self.audio_enabled=QCheckBox('FRN-Audio aktiv'); self.audio_enabled.setChecked(True); self.audio_in=QComboBox(); self.audio_out=QComboBox(); rb=QPushButton('Audiogeräte neu laden'); rb.clicked.connect(self.refresh_audio_devices); test_out=QPushButton('Audio-Ausgang testen'); test_out.clicked.connect(self.test_audio_output)
         self.connect_btn=QPushButton('Verbinden'); self.disconnect_btn=QPushButton('Trennen'); self.disconnect_btn.setEnabled(False); self.connect_btn.clicked.connect(self.connect_frn); self.disconnect_btn.clicked.connect(self.disconnect_frn)
         br=QHBoxLayout(); br.addWidget(self.connect_btn); br.addWidget(self.disconnect_btn)
-        compat_note=QLabel('Kompatibilität: PC only (CL=2) sendet BC=PC Only und CT automatisch im FRN-Format „Stadt - -“ (bei leerer Stadt: „ - -“). Crosslink (CL=0) sendet BC=Crosslink. Gateway (CL=1) verwendet Band/Kanal und Stadt wie eingetragen.'); compat_note.setWordWrap(True)
+        compat_note=QLabel('Kompatibilität: PC only (CL=2) sendet BC=PC Only und CT automatisch im FRN-Format „Stadt - -“ (bei leerer Stadt exakt „- -“). Crosslink (CL=0) sendet BC=Crosslink. Gateway (CL=1) verwendet Band/Kanal und Stadt wie eingetragen.'); compat_note.setWordWrap(True)
         for label,obj in [('SystemManager:',self.manager),('Server:',self.server),('Port:',self.port),('Raum:',self.room),('E-Mail:',self.email),('Passwort:',self.password),('',self.show_password),('',self.main_password_fallback),('Rufzeichen / Name:',self.callsign),('Beschreibung:',self.description),('Band / Kanal:',self.band),('Land:',self.country),('Stadt / Bereich:',self.city),('FRN Client-Typ (CL):',self.client_type),('FRN Version (VX):',self.protocol_version),('',compat_note),('',self.audio_enabled),('Audio Eingang:',self.audio_in),('Audio Ausgang:',self.audio_out),('',rb),('',test_out),('',br)]: f.addRow(label,obj)
         tabs.addTab(w,'Verbindung')
         # Servers & rooms
@@ -208,9 +208,9 @@ class FrnPanel(QWidget):
             if city.endswith(' - -'):
                 city_part=city
             elif city in ('-', '- -'):
-                city_part=' - -'
+                city_part='- -'
             else:
-                city_part=(city + ' - -') if city else ' - -'
+                city_part=(city + ' - -') if city else '- -'
         else:
             city_part=city
 
