@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.42 – Mumble Zertifikate und Serverliste absichern
+
+- Zertifikatsbereich erhält einen echten In-Memory-Selbsttest
+- zeigt direkt „Zertifikatsmodul: OK“ oder die konkrete fehlende Komponente
+- Erstellen/Importieren startet nur, wenn der Zertifikats-Backend-Test erfolgreich ist
+- GitHub-Build erzeugt vor PyInstaller testweise ein Zertifikat komplett im Speicher
+- cryptography-Untermodul-Sammlung wird vollständig, aber ohne collect-all-Datenballast eingebunden
+- _rust.pyd bleibt zusätzlich explizit im Build abgesichert
+- öffentliche Mumble-Serverliste zeigt jetzt sichtbar ihre Quelle
+- „offizielle Mumble-Liste“ bedeutet publist.mumble.info/v1/list
+- falls nur der alte Fallback verfügbar ist, wird deutlich gewarnt:
+  - Fallback-Liste
+  - ungefähr 50 Einträge begrenzt
+- Gesamtzahl und sichtbare Zahl bleiben getrennt sichtbar
+- verhindert die Verwechslung „Deutschland hat nur 12 Server“ mit einem stillen 50er-Fallback
+- bisherige Mumble-Abrundungen bleiben enthalten:
+  - separater globaler Mumble-PTT-Hotkey
+  - Mumble-PTT oben neben FRN-PTT
+  - eigener TX-Mund orange
+  - fremder Sprecher rot
+  - Whisper blau
+  - schweigend grün
+  - Benutzer direkt im Channelbaum
+  - Empfang standardmäßig hörbar
+  - Serverfavoriten
+
 ## 0.2.41 – Mumble PTT in der oberen Leiste
 
 - neue Mumble-PTT direkt neben der FRN-PTT
