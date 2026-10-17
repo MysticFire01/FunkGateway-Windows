@@ -460,7 +460,9 @@ class MainWindow(QMainWindow):
         self.ts_audio_bridge_mode = QComboBox()
         self.ts_audio_bridge_mode.addItem("Direkt über FunkGateway TS3-Plugin", "plugin")
         self.ts_audio_bridge_mode.addItem("Virtuelles Audiogerät (Fallback)", "device")
+        self.ts_audio_bridge_mode.currentIndexChanged.connect(self._ts_audio_bridge_mode_changed)
         self.ts_audio_bridge_enabled = QCheckBox("Funk-RX Audio nach TeamSpeak weiterleiten")
+        self.ts_audio_bridge_enabled.toggled.connect(self._ts_audio_bridge_enabled_changed)
         self.ts_audio_bridge_status = QLabel("Audio-Brücke: aus")
         self.ts_plugin_test = QPushButton("TS3-Plugin prüfen")
         self.ts_plugin_test.clicked.connect(self._probe_ts_plugin)
@@ -1125,6 +1127,23 @@ class MainWindow(QMainWindow):
                 "Das FunkGateway Audio Bridge Plugin antwortet nicht.\n"
                 "Bitte Plugin installieren/aktivieren und TeamSpeak neu starten."
             )
+
+    def _ts_audio_bridge_mode_changed(self, *_args):
+        if (
+            self.gateway_started
+            and self.ts_audio_bridge_enabled.isChecked()
+            and self._mode() in ("gateway", "radio_parrot")
+        ):
+            self._stop_radio_audio_bridge()
+            self._start_radio_audio_bridge()
+
+    def _ts_audio_bridge_enabled_changed(self, enabled):
+        # The forwarding checkbox is a live control. RX detection is separate.
+        if not enabled:
+            self._stop_radio_audio_bridge()
+            return
+        if self.gateway_started and self._mode() in ("gateway", "radio_parrot"):
+            self._start_radio_audio_bridge()
 
     def _start_radio_audio_bridge(self):
         if not self.ts_audio_bridge_enabled.isChecked():
