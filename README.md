@@ -675,3 +675,11 @@ when invoked from GitHub Actions. The release workflow now validates the JSON
 self-test result itself and requires `"ok": true`. This allows the corrected
 cryptography runtime package to be released under a fresh version/tag instead
 of leaving users on a stale broken 0.2.44 package.
+
+
+## Packaged version validation 0.2.46
+
+Every Windows release now validates the version from the finished PyInstaller
+EXE itself before creating a ZIP or GitHub release. This prevents a release tag
+or ZIP filename from claiming a newer version while the packaged application
+still contains an older VERSION constant.
