@@ -595,3 +595,12 @@ smaller result set.
 
 FunkGateway still groups servers by country and augments the official metadata
 with live Mumble UDP ping information for current/max users and latency.
+
+
+## Mumble receive audio semantics 0.2.38
+
+Native Mumble receive audio is now audible by default in PC-user mode. The old
+"Mumble-Audio lokal wiedergeben" checkbox was easy to mistake for microphone
+monitoring. It is replaced by a clear "Mumble-Empfang stummschalten" control.
+Unchecked means normal Mumble behavior: incoming users are immediately played
+through the selected speakers/headphones.
