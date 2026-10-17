@@ -570,7 +570,10 @@ class MainWindow(QMainWindow):
         self.dtmf_lockout_seconds.setValue(60)
         self.dtmf_lockout_seconds.setSuffix(" s")
         af.addRow("AUTH-Verfahren:", self.dtmf_auth_method)
-        af.addRow("PIN:", self.dtmf_pin)
+        pin_save = QPushButton("PIN sicher übernehmen")
+        pin_save.clicked.connect(self._set_dtmf_pin)
+        af.addRow("Neue PIN:", self.dtmf_pin)
+        af.addRow("", pin_save)
         af.addRow("TOTP-Konto:", self.dtmf_totp_account)
         af.addRow("TOTP-Geheimnis:", self.dtmf_totp_secret_view)
         af.addRow("", show_secret)
@@ -672,6 +675,19 @@ class MainWindow(QMainWindow):
             digest = hashlib.pbkdf2_hmac("sha256", pin.encode(), bytes.fromhex(self._dtmf_pin_salt), 120000)
             return hmac.compare_digest(digest.hex(), self._dtmf_pin_hash)
         return hmac.compare_digest(pin, self.dtmf_pin.text().strip())
+
+    def _set_dtmf_pin(self):
+        pin = self.dtmf_pin.text().strip()
+        if not (pin.isdigit() and 4 <= len(pin) <= 12):
+            QMessageBox.warning(self, "DTMF PIN", "Bitte eine PIN aus 4 bis 12 Ziffern eingeben.")
+            return
+        salt = secrets.token_bytes(16)
+        self._dtmf_pin_salt = salt.hex()
+        self._dtmf_pin_hash = hashlib.pbkdf2_hmac("sha256", pin.encode(), salt, 120000).hex()
+        self.dtmf_pin.clear()
+        self._configure_dtmf()
+        self._save_config()
+        QMessageBox.information(self, "DTMF PIN", "PIN als gesicherter Hash gespeichert.")
 
     def _build_protection(self):
         """Linux-style protection tabs; reuse the existing Windows safety controls."""
@@ -4879,7 +4895,9 @@ class MainWindow(QMainWindow):
                 self._dtmf_pin_hash = str(ptt_cfg.get("dtmf_pin_hash", ""))
                 legacy_pin = str(ptt_cfg.get("dtmf_pin", ""))
                 if legacy_pin and not self._dtmf_pin_hash:
-                    self.dtmf_pin.setText(legacy_pin)
+                    salt = secrets.token_bytes(16)
+                    self._dtmf_pin_salt = salt.hex()
+                    self._dtmf_pin_hash = hashlib.pbkdf2_hmac("sha256", legacy_pin.encode(), salt, 120000).hex()
                 idx = self.dtmf_auth_method.findData(str(ptt_cfg.get("dtmf_auth_method", "pin")))
                 if idx >= 0:
                     self.dtmf_auth_method.setCurrentIndex(idx)
@@ -4963,7 +4981,7 @@ class MainWindow(QMainWindow):
                 "dtmf_lockout_seconds": self.dtmf_lockout_seconds.value(),
                 "dtmf_pin_salt": self._dtmf_pin_salt,
                 "dtmf_pin_hash": self._dtmf_pin_hash,
-                "dtmf_pin": self.dtmf_pin.text().strip() if not self._dtmf_pin_hash else "",
+                "dtmf_pin": "",
             },
             "mumble": {
                 "enabled": self.mumble_enabled.isChecked() if hasattr(self, "mumble_enabled") else True,
