@@ -21,6 +21,7 @@ from .integrations.frn_panel import FrnPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
 from .ptt import DryPTT, SerialPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
+from .integrations.mumble_windows import MumbleWindowsBackend
 from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_devices
 from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge, PLUGIN_VERSION as TS_PLUGIN_VERSION
 from .tx_audio import AudioTxEngine, SoundInputTxSource
@@ -69,6 +70,7 @@ class MainWindow(QMainWindow):
         self.gateway_started = False
 
         self.ts_client = TeamSpeakClientQuery()
+        self.mumble_backend = MumbleWindowsBackend()
         self.ts_last_status = None
         self.ts_last_speakers = []
         self.ts_last_channel = None
@@ -571,12 +573,105 @@ class MainWindow(QMainWindow):
 
         mumble = QWidget()
         mf = QFormLayout(mumble)
-        mf.addRow(QLabel("<b>Mumble</b>"))
-        mf.addRow("Status:", QLabel("Windows-Mumble-Portierung folgt"))
-        mf.addRow("Geplant:", QLabel("lokaler Clientstatus, Sprecher, Channel und optionale Serversteuerung"))
+        mf.addRow(QLabel("<b>Mumble Windows</b>"))
+
+        self.mumble_enabled = QCheckBox("Mumble-Modul aktiv")
+        self.mumble_enabled.setChecked(True)
+        self.mumble_status_label = QLabel("Noch nicht geprüft")
+        self.mumble_version_label = QLabel("—")
+        self.mumble_server = QLineEdit()
+        self.mumble_server.setPlaceholderText("z. B. voice.mumble-funk.de")
+        self.mumble_port = QSpinBox()
+        self.mumble_port.setRange(1, 65535)
+        self.mumble_port.setValue(64738)
+        self.mumble_user = QLineEdit()
+        self.mumble_user.setPlaceholderText("optional")
+        self.mumble_channel = QLineEdit()
+        self.mumble_channel.setPlaceholderText("z. B. Treffpunkte/Treffpunkt 1")
+
+        self.mumble_test_btn = QPushButton("Mumble prüfen")
+        self.mumble_test_btn.clicked.connect(self._test_mumble)
+        self.mumble_move_btn = QPushButton("In Mumble-Channel wechseln")
+        self.mumble_move_btn.clicked.connect(self._move_mumble_channel)
+
+        self.mumble_mode_label = QLabel("Steuerweg: —")
+        self.mumble_mode_label.setWordWrap(True)
+        self.mumble_note = QLabel(
+            "Mumble 1.2.x wird über den offiziellen mumble://-Linkweg gesteuert. "
+            "Ab Mumble 1.4 kann später zusätzlich die moderne Client-Plugin-API verwendet werden."
+        )
+        self.mumble_note.setWordWrap(True)
+
+        mf.addRow("", self.mumble_enabled)
+        mf.addRow("Status:", self.mumble_status_label)
+        mf.addRow("Version:", self.mumble_version_label)
+        mf.addRow("Server:", self.mumble_server)
+        mf.addRow("Port:", self.mumble_port)
+        mf.addRow("Benutzer:", self.mumble_user)
+        mf.addRow("Channel-Pfad:", self.mumble_channel)
+        mf.addRow("", self.mumble_test_btn)
+        mf.addRow("", self.mumble_move_btn)
+        mf.addRow("Steuerung:", self.mumble_mode_label)
+        mf.addRow("", self.mumble_note)
         self.integration_tabs.addTab(mumble, "Mumble")
 
         self._scroll_tab(page, "Integrationen")
+
+    def _test_mumble(self):
+        info = self.mumble_backend.process_info()
+        if not info.get("running"):
+            self.mumble_status_label.setText("Nicht gestartet")
+            self.mumble_version_label.setText("—")
+            self.mumble_mode_label.setText("Steuerweg: nicht verfügbar")
+            self.status_mumble.setText("Mumble: nicht gestartet")
+            QMessageBox.warning(
+                self,
+                "Mumble",
+                "Mumble wurde unter Windows nicht als laufender Client gefunden."
+            )
+            return
+
+        version = str(info.get("version") or "unbekannt")
+        modern = self.mumble_backend.modern_plugin_capable(version)
+        self.mumble_status_label.setText(
+            f"Läuft · PID {info.get('pid') or '—'}"
+        )
+        self.mumble_version_label.setText(version)
+        if modern:
+            self.mumble_mode_label.setText(
+                "Mumble ≥ 1.4 erkannt · moderner Plugin/API-Weg möglich"
+            )
+        else:
+            self.mumble_mode_label.setText(
+                "Legacy-kompatibel · Channel-Steuerung über mumble://"
+            )
+        self.status_mumble.setText("Mumble: läuft · " + version)
+        QMessageBox.information(
+            self,
+            "Mumble",
+            "Mumble wurde gefunden.\n\n"
+            f"Version: {version}\n"
+            + (
+                "Moderner Plugin/API-Weg grundsätzlich verfügbar."
+                if modern else
+                "Legacy-Modus aktiv: Channel-Wechsel über offiziellen mumble://-Link."
+            )
+        )
+
+    def _move_mumble_channel(self):
+        if not self.mumble_enabled.isChecked():
+            return
+        try:
+            url = self.mumble_backend.open_channel(
+                self.mumble_server.text().strip(),
+                self.mumble_port.value(),
+                self.mumble_channel.text().strip(),
+                self.mumble_user.text().strip(),
+            )
+            self.ui_log.appendPlainText("Mumble Channel-Link geöffnet: " + url)
+            self.mumble_status_label.setText("Channel-Wechsel angefordert")
+        except Exception as exc:
+            QMessageBox.warning(self, "Mumble Channel-Wechsel", str(exc))
 
     def _build_appearance(self):
         page = QWidget()
@@ -738,6 +833,18 @@ class MainWindow(QMainWindow):
             getattr(self, "ts_rx_threshold", None),
             getattr(self, "ts_rx_hang", None),
             getattr(self, "ts_rx_level_label", None),
+        ):
+            if widget is not None:
+                self._set_form_field_visible(widget, not simple)
+
+        # Mumble follows the same UI levels. Normal channel switching remains
+        # available in Simple; version/protocol detail is Full/Developer.
+        for widget in (
+            getattr(self, "mumble_version_label", None),
+            getattr(self, "mumble_user", None),
+            getattr(self, "mumble_test_btn", None),
+            getattr(self, "mumble_mode_label", None),
+            getattr(self, "mumble_note", None),
         ):
             if widget is not None:
                 self._set_form_field_visible(widget, not simple)
@@ -2213,6 +2320,14 @@ class MainWindow(QMainWindow):
                 self.tx_audio_threshold.setValue(float(audio_cfg.get("tx_threshold", -40.0)))
                 self.tx_audio_hang.setValue(int(audio_cfg.get("tx_hang_ms", 450)))
 
+            mumble_cfg = data.get("mumble", {})
+            if hasattr(self, "mumble_enabled"):
+                self.mumble_enabled.setChecked(bool(mumble_cfg.get("enabled", True)))
+                self.mumble_server.setText(str(mumble_cfg.get("server", "")))
+                self.mumble_port.setValue(int(mumble_cfg.get("port", 64738)))
+                self.mumble_user.setText(str(mumble_cfg.get("user", "")))
+                self.mumble_channel.setText(str(mumble_cfg.get("channel", "")))
+
             ptt_cfg = data.get("ptt", {})
             idx = self.gateway_ptt_backend.findData(ptt_cfg.get("backend", "dry"))
             if idx >= 0:
@@ -2294,6 +2409,13 @@ class MainWindow(QMainWindow):
                 ),
                 "line": self.gateway_ptt_line.currentText(),
                 "invert": self.gateway_ptt_invert.isChecked(),
+            },
+            "mumble": {
+                "enabled": self.mumble_enabled.isChecked() if hasattr(self, "mumble_enabled") else True,
+                "server": self.mumble_server.text().strip() if hasattr(self, "mumble_server") else "",
+                "port": self.mumble_port.value() if hasattr(self, "mumble_port") else 64738,
+                "user": self.mumble_user.text().strip() if hasattr(self, "mumble_user") else "",
+                "channel": self.mumble_channel.text().strip() if hasattr(self, "mumble_channel") else "",
             },
             "teamspeak": {
                 "enabled": self.ts_enabled.isChecked(),
