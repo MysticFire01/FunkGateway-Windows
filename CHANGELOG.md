@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.19 – Integrationsansichten + TeamSpeak-Härtung
+
+- drei Oberflächenstufen wirken jetzt auch auf FRN und TeamSpeak
+- FRN Vereinfacht zeigt die normalen Betriebsfelder, blendet Protokoll-/Feintuning aus
+- FRN-Protokollversion (VX) ist nur noch in Entwickleroptionen sichtbar
+- TeamSpeak Vereinfacht zeigt laufenden Betrieb, Funk-RX-Weiterleitung und Commander ohne technische Detailfelder
+- TeamSpeak Voll zeigt reguläre Konfiguration, Channel-Wechsel, Audio-Weg und Plugin-Verwaltung
+- TeamSpeak Entwickler ergänzt Plugin-Probe/Diagnose
+- TS3-Plugin auf 0.1.2
+- expliziter Plugin-Bridge-Reset gegen alte Audio-/CT-Zustände
+- Plugin-Zustand wird bei TeamSpeak-Disconnect vollständig verworfen
+- 3-Sekunden-Plugin-Watchdog erkennt TeamSpeak-/Plugin-Neustarts
+- bei Rückkehr des Plugins wird die laufende Funk→TeamSpeak-Brücke automatisch neu bewaffnet
+- Plugin-Test zeigt installierte und mitgelieferte Version
+
 ## 0.2.18 – Drei Oberflächenstufen
 
 - neue Auswahl: Vereinfachte Oberfläche, Volle Oberfläche, Entwickleroptionen
