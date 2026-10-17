@@ -169,6 +169,7 @@ class RadioAudioBridge(QObject):
         super().__init__(parent)
         self._thread = None
         self._stop = threading.Event()
+        self._inhibit_until = 0.0
 
     def inhibit(self, milliseconds=900):
         self._inhibit_until = max(
