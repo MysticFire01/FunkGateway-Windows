@@ -88,15 +88,24 @@ QTabBar::tab {{ background: {p['panel_alt']}; color: {p['text']}; border: 1px so
 QTabBar::tab:selected {{ background: {p['accent']}; color: {p['accent_text']}; border-color: {p['accent']}; }}
 QProgressBar {{ border: 1px solid {p['border']}; border-radius: 5px; text-align: center; background: {p['panel']}; color: {p['text']}; }}
 QProgressBar::chunk {{ background-color: {p['accent']}; border-radius: 4px; }}
-QTableView, QTableWidget {{
+QTableView, QTableWidget, QTreeView, QTreeWidget {{
     background-color: {p['bg']}; alternate-background-color: {p['panel']};
     color: {p['text']}; gridline-color: {p['border']};
     border: 1px solid {p['border']}; selection-background-color: {p['accent']};
     selection-color: {p['accent_text']}; outline: 0;
 }}
-QTableView:focus, QTableWidget:focus {{ border: 1px solid {p['border']}; outline: 0; }}
-QTableView::item, QTableWidget::item {{ border: 0px; padding: 3px; }}
-QTableView::item:selected, QTableWidget::item:selected {{
+QTableView:focus, QTableWidget:focus, QTreeView:focus, QTreeWidget:focus {{
+    border: 1px solid {p['border']}; outline: 0;
+}}
+QTableView::item, QTableWidget::item, QTreeView::item, QTreeWidget::item {{
+    border: 0px; padding: 3px;
+}}
+QTableView::item:alternate, QTableWidget::item:alternate,
+QTreeView::item:alternate, QTreeWidget::item:alternate {{
+    background-color: {p['panel']};
+}}
+QTableView::item:selected, QTableWidget::item:selected,
+QTreeView::item:selected, QTreeWidget::item:selected {{
     background-color: {p['accent']}; color: {p['accent_text']};
 }}
 QHeaderView {{ background-color: {p['panel_alt']}; color: {p['text']}; }}
