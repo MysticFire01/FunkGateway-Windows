@@ -7,7 +7,7 @@ from PySide6.QtCore import QTimer, QObject, QThread, Signal, Qt
 from PySide6.QtWidgets import (
     QMainWindow, QApplication, QMessageBox, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QComboBox, QTabWidget, QGroupBox, QFormLayout,
-    QCheckBox, QScrollArea, QPlainTextEdit, QLineEdit
+    QCheckBox, QScrollArea, QPlainTextEdit, QLineEdit, QDoubleSpinBox, QSpinBox
 )
 
 from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
@@ -18,6 +18,7 @@ from .integrations.frn_panel import FrnPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
 from .ptt import DryPTT, SerialPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
+from .radio_rx import RadioRxDetector, input_devices
 
 
 class UpdateWorker(QObject):
@@ -68,6 +69,11 @@ class MainWindow(QMainWindow):
         self.ts_last_server = None
         self.ts_channels = []
         self.ts_commander_state = False
+        self.radio_rx_detector = RadioRxDetector(self)
+        self.radio_rx_detector.activity.connect(self._radio_rx_activity_changed)
+        self.radio_rx_detector.level.connect(self._radio_rx_level_changed)
+        self.radio_rx_detector.error.connect(self._radio_rx_error)
+        self.radio_rx_active = False
 
         self._build_update_menu()
         self._build_shell()
@@ -351,12 +357,33 @@ class MainWindow(QMainWindow):
         self.ts_commander = QCheckBox("Channel Commander")
         self.ts_commander.toggled.connect(self._set_ts_commander)
 
+        self.ts_commander_auto = QCheckBox("Channel Commander automatisch bei Funk-RX")
+        self.ts_commander_auto.setChecked(True)
+        self.ts_commander_auto.toggled.connect(self._ts_commander_auto_changed)
+
+        self.ts_rx_input = QComboBox()
+        self.ts_rx_threshold = QDoubleSpinBox()
+        self.ts_rx_threshold.setRange(-80.0, -3.0)
+        self.ts_rx_threshold.setDecimals(1)
+        self.ts_rx_threshold.setSingleStep(1.0)
+        self.ts_rx_threshold.setValue(-35.0)
+        self.ts_rx_threshold.setSuffix(" dBFS")
+        self.ts_rx_hang = QSpinBox()
+        self.ts_rx_hang.setRange(0, 5000)
+        self.ts_rx_hang.setSingleStep(100)
+        self.ts_rx_hang.setValue(700)
+        self.ts_rx_hang.setSuffix(" ms")
+        self.ts_rx_level_label = QLabel("RX: —")
+        self.ts_rx_state_label = QLabel("Funk-RX: aus")
+        self._refresh_ts_rx_inputs()
+
         found_key = read_default_api_key()
         if found_key:
             self.ts_api_key.setText(found_key)
 
         self.ts_enabled.setEnabled(True)
         self.ts_enabled.toggled.connect(lambda _v: self._poll_teamspeak(force=True))
+        self.ts_commander.setEnabled(not self.ts_commander_auto.isChecked())
 
         ts_test = QPushButton("ClientQuery testen")
         ts_test.clicked.connect(self._test_teamspeak)
@@ -378,10 +405,17 @@ class MainWindow(QMainWindow):
         tf.addRow("", ts_refresh_channels)
         tf.addRow("", ts_move)
         tf.addRow("", self.ts_commander)
+        tf.addRow("", self.ts_commander_auto)
+        tf.addRow("Funk-RX Eingang:", self.ts_rx_input)
+        tf.addRow("RX-Schwellwert:", self.ts_rx_threshold)
+        tf.addRow("RX-Nachlauf:", self.ts_rx_hang)
+        tf.addRow("RX-Pegel:", self.ts_rx_level_label)
+        tf.addRow("RX-Status:", self.ts_rx_state_label)
         note = QLabel(
             "TeamSpeak-Steuerung: Status, Server, eigener Client, Channel-Liste, "
             "aktive Sprecher, Channel-Wechsel und Channel Commander. "
-            "Die Audio-/PTT-Verknüpfung mit dem Funkweg folgt als nächster Schritt."
+            "Im Funk-Gateway-Modus kann Channel Commander bereits automatisch dem Funk-RX folgen. "
+            "Das eigentliche Funk-Audio-Routing nach TeamSpeak folgt als nächster Schritt."
         )
         note.setWordWrap(True)
         tf.addRow("", note)
@@ -475,6 +509,12 @@ class MainWindow(QMainWindow):
 
     def _mode_changed(self, *_args):
         self._current_mode = self.operating_mode.currentData() or "pc"
+        if self._current_mode not in ("gateway", "radio_parrot"):
+            self._stop_radio_rx_detector()
+            if self.ts_commander_auto.isChecked() and self.ts_commander_state:
+                self._set_ts_commander_state(False, "Betriebsart")
+        elif self.gateway_started and self.ts_commander_auto.isChecked():
+            self._start_radio_rx_detector()
         self._apply_mode()
         self._update_live_status()
 
@@ -610,6 +650,7 @@ class MainWindow(QMainWindow):
             self.status_ptt.setText("PTT: Gateway bereit")
             self.start_main_btn.setEnabled(False)
             self.stop_main_btn.setEnabled(True)
+            self._start_radio_rx_detector()
             self._update_live_status()
         except Exception as exc:
             self.gateway_ptt = None
@@ -637,6 +678,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "start_main_btn"):
             self.start_main_btn.setEnabled(True)
             self.stop_main_btn.setEnabled(False)
+        self._stop_radio_rx_detector()
+        if self.ts_commander_auto.isChecked() and self.ts_commander_state:
+            self._set_ts_commander_state(False, "Gateway gestoppt")
         if not silent:
             self._update_live_status()
 
@@ -796,6 +840,83 @@ class MainWindow(QMainWindow):
             "Windows-Port 0.2"
         )
 
+    # ------------------------------------------------------------ Funk-RX
+    def _refresh_ts_rx_inputs(self):
+        if not hasattr(self, "ts_rx_input"):
+            return
+        current = self.ts_rx_input.currentData()
+        self.ts_rx_input.clear()
+        for index, name in input_devices():
+            self.ts_rx_input.addItem(f"{index}: {name}", index)
+        if current is not None:
+            idx = self.ts_rx_input.findData(current)
+            if idx >= 0:
+                self.ts_rx_input.setCurrentIndex(idx)
+
+    def _start_radio_rx_detector(self):
+        if self._mode() not in ("gateway", "radio_parrot"):
+            return
+        if not hasattr(self, "ts_commander_auto") or not self.ts_commander_auto.isChecked():
+            return
+        device = self.ts_rx_input.currentData()
+        if device is None:
+            self.ts_rx_state_label.setText("Funk-RX: kein Audioeingang gewählt")
+            return
+        try:
+            self.radio_rx_detector.start(
+                device,
+                self.ts_rx_threshold.value(),
+                self.ts_rx_hang.value(),
+            )
+            self.ts_rx_state_label.setText("Funk-RX: Detektor aktiv")
+            self.ui_log.appendPlainText("Funk-RX: Audioaktivitätsdetektor gestartet.")
+        except Exception as exc:
+            self._radio_rx_error(str(exc))
+
+    def _stop_radio_rx_detector(self):
+        try:
+            self.radio_rx_detector.stop()
+        except Exception:
+            pass
+        self.radio_rx_active = False
+        if hasattr(self, "ts_rx_state_label"):
+            self.ts_rx_state_label.setText("Funk-RX: aus")
+
+    def _radio_rx_level_changed(self, db):
+        if hasattr(self, "ts_rx_level_label"):
+            self.ts_rx_level_label.setText(f"RX: {float(db):.1f} dBFS")
+
+    def _radio_rx_activity_changed(self, active):
+        self.radio_rx_active = bool(active)
+        if hasattr(self, "ts_rx_state_label"):
+            self.ts_rx_state_label.setText(
+                "Funk-RX: AKTIV" if active else "Funk-RX: frei"
+            )
+        if (
+            self.ts_enabled.isChecked()
+            and self.ts_commander_auto.isChecked()
+            and self._mode() in ("gateway", "radio_parrot")
+        ):
+            self._set_ts_commander_state(bool(active), "Funk-RX")
+
+    def _radio_rx_error(self, message):
+        self.radio_rx_active = False
+        if hasattr(self, "ts_rx_state_label"):
+            self.ts_rx_state_label.setText("Funk-RX Fehler: " + str(message))
+        self.ui_log.appendPlainText("Funk-RX Fehler: " + str(message))
+
+    def _ts_commander_auto_changed(self, enabled):
+        self.ts_commander.setEnabled(not bool(enabled))
+        if enabled and self.gateway_started and self._mode() in ("gateway", "radio_parrot"):
+            self._start_radio_rx_detector()
+        else:
+            self._stop_radio_rx_detector()
+            if enabled is False and self.ts_commander_state:
+                # Manual state is controlled by the checkbox from here on.
+                return
+            if enabled and self.ts_commander_state:
+                self._set_ts_commander_state(False, "Automatik")
+
     # ------------------------------------------------------------ TeamSpeak
     def _configure_teamspeak(self):
         try:
@@ -868,25 +989,39 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, "TeamSpeak Channel-Wechsel", str(exc))
 
-    def _set_ts_commander(self, enabled):
+    def _set_ts_commander_state(self, enabled, source="manuell"):
         if not self.ts_enabled.isChecked():
-            if enabled:
-                self.ts_commander.blockSignals(True)
-                self.ts_commander.setChecked(False)
-                self.ts_commander.blockSignals(False)
+            return
+        wanted = bool(enabled)
+        if self.ts_commander_state == wanted:
             return
         self._configure_teamspeak()
         try:
-            self.ts_client.set_channel_commander(bool(enabled))
-            self.ts_commander_state = bool(enabled)
+            self.ts_client.set_channel_commander(wanted)
+            self.ts_commander_state = wanted
+            self.ts_commander.blockSignals(True)
+            self.ts_commander.setChecked(wanted)
+            self.ts_commander.blockSignals(False)
             self.ui_log.appendPlainText(
-                "TeamSpeak: Channel Commander " + ("ein." if enabled else "aus.")
+                "TeamSpeak: Channel Commander "
+                + ("EIN" if wanted else "AUS")
+                + f" ({source})."
             )
         except Exception as exc:
             self.ts_commander.blockSignals(True)
             self.ts_commander.setChecked(self.ts_commander_state)
             self.ts_commander.blockSignals(False)
-            QMessageBox.warning(self, "TeamSpeak Channel Commander", str(exc))
+            if source == "manuell":
+                QMessageBox.warning(self, "TeamSpeak Channel Commander", str(exc))
+            else:
+                self.ui_log.appendPlainText(
+                    f"TeamSpeak Channel Commander ({source}): {exc}"
+                )
+
+    def _set_ts_commander(self, enabled):
+        if self.ts_commander_auto.isChecked():
+            return
+        self._set_ts_commander_state(bool(enabled), "manuell")
 
     def _poll_teamspeak(self, force=False):
         if not hasattr(self, "ts_enabled") or not self.ts_enabled.isChecked():
@@ -1057,6 +1192,14 @@ class MainWindow(QMainWindow):
                 self.ts_commander.setChecked(bool(ts_cfg.get("channel_commander", False)))
                 self.ts_commander_state = self.ts_commander.isChecked()
                 self.ts_commander.blockSignals(False)
+                self.ts_commander_auto.setChecked(bool(ts_cfg.get("commander_auto", True)))
+                rx_device = ts_cfg.get("rx_input")
+                if rx_device is not None:
+                    idx = self.ts_rx_input.findData(rx_device)
+                    if idx >= 0:
+                        self.ts_rx_input.setCurrentIndex(idx)
+                self.ts_rx_threshold.setValue(float(ts_cfg.get("rx_threshold", -35.0)))
+                self.ts_rx_hang.setValue(int(ts_cfg.get("rx_hang_ms", 700)))
         except Exception as exc:
             self.frn_panel._log("Konfiguration konnte nicht geladen werden: " + str(exc))
 
@@ -1083,6 +1226,10 @@ class MainWindow(QMainWindow):
                 "port": int(self.ts_port.text().strip() or "25639"),
                 "api_key": self.ts_api_key.text().strip(),
                 "channel_commander": self.ts_commander.isChecked(),
+                "commander_auto": self.ts_commander_auto.isChecked(),
+                "rx_input": self.ts_rx_input.currentData(),
+                "rx_threshold": self.ts_rx_threshold.value(),
+                "rx_hang_ms": self.ts_rx_hang.value(),
             },
         }
         CFG_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -1104,6 +1251,10 @@ class MainWindow(QMainWindow):
             pass
         try:
             self._stop_gateway_ptt(silent=True)
+        except Exception:
+            pass
+        try:
+            self._stop_radio_rx_detector()
         except Exception:
             pass
         try:
