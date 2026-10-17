@@ -45,6 +45,7 @@ from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge, PLUGIN_VERSION as TS_
 from .tx_audio import AudioTxEngine, SoundInputTxSource
 from .wasapi_loopback import WasapiSystemLoopbackSource
 from .dtmf import DtmfDecoder
+from .voip_parrot_audio import VoipParrotCapture
 
 
 DEFAULT_MUMBLE_FAVORITES = [
@@ -131,6 +132,7 @@ class MainWindow(QMainWindow):
         self._parrot_duration = 0.0
         self._parrot_rate = 48000
         self._parrot_generation = 0
+        self._parrot_tail_until = 0.0
         self._dtmf_totp_secret = ""
         self._dtmf_totp_last_counter = -1
         self._dtmf_failed_attempts = 0
@@ -191,6 +193,9 @@ class MainWindow(QMainWindow):
         self.mumble_native.radioRxLevel.connect(self._mumble_native_rx_level_changed)
         self.mumble_native.networkRxLevel.connect(self._mumble_native_network_rx_level_changed)
         self.mumble_native.networkPcm.connect(self._parrot_voip_pcm)
+        self.voip_parrot_capture = VoipParrotCapture(self)
+        self.voip_parrot_capture.pcm.connect(self._parrot_generic_voip_pcm)
+        self.voip_parrot_capture.error.connect(self._parrot_error)
         self.mumble_native.error.connect(self._mumble_native_error)
         self.tx_audio_source = SoundInputTxSource(self.tx_audio_engine, self)
         self.tx_wasapi_source = WasapiSystemLoopbackSource(
@@ -428,6 +433,38 @@ class MainWindow(QMainWindow):
         pf.addRow("Status:", self.parrot_status)
         v.addWidget(parrot)
 
+        voip_box = QGroupBox("Universeller VoIP-Papagei – TeamSpeak, Mumble, FRN, TeamTalk")
+        vf = QFormLayout(voip_box)
+        self.voip_parrot_source = QComboBox()
+        self.voip_parrot_source.addItem("Audio-Geräte / virtuelle Audiokabel (alle VoIP-Programme)", "generic")
+        self.voip_parrot_source.addItem("Nativer Mumble-Client (ohne virtuelle Kabel)", "native_mumble")
+        self.voip_parrot_input = QComboBox()
+        self.voip_parrot_output = QComboBox()
+        refresh_voip = QPushButton("VoIP-Audiogeräte aktualisieren")
+        refresh_voip.clicked.connect(self._refresh_voip_parrot_devices)
+        start_voip = QPushButton("VoIP-Aufnahme starten")
+        start_voip.clicked.connect(self._start_voip_parrot_capture)
+        stop_voip = QPushButton("VoIP-Aufnahme stoppen")
+        stop_voip.clicked.connect(self._stop_voip_parrot_capture)
+        self.voip_parrot_source.currentIndexChanged.connect(self._voip_parrot_source_changed)
+        vf.addRow("Audioweg:", self.voip_parrot_source)
+        vf.addRow("Eingang (VoIP-Empfang):", self.voip_parrot_input)
+        vf.addRow("Ausgang (VoIP-Mikrofon):", self.voip_parrot_output)
+        vf.addRow("", refresh_voip)
+        vf.addRow("", start_voip)
+        vf.addRow("", stop_voip)
+        note = QLabel(
+            "Universeller Modulationstest: Im jeweiligen VoIP-Programm dessen Audio "
+            "auf den hier gewählten Eingang routen (z. B. VB-CABLE); als Mikrofon "
+            "den hier gewählten Wiedergabeweg verwenden. Ohne passende Audio-Routen "
+            "kann FunkGateway nicht direkt in fremde Programme senden. "
+            "Für Mumble steht zusätzlich der native Direktmodus bereit."
+        )
+        note.setWordWrap(True)
+        vf.addRow("", note)
+        v.addWidget(voip_box)
+        self._refresh_voip_parrot_devices()
+
         wizard = QGroupBox("Einrichtungsassistent – Audio und PTT")
         wf = QFormLayout(wizard)
         description = QLabel("Schrittweise Audioeingang, Funk-Ausgang und PTT prüfen. Die Auswahl öffnet die vorhandenen Einstellungen; die Hardware wird nicht automatisch auf Sendung geschaltet.")
@@ -474,6 +511,7 @@ class MainWindow(QMainWindow):
         self._parrot_playing = False
         self._parrot_duration = 0.0
         self._parrot_last_sound = 0.0
+        self._parrot_tail_until = 0.0
         if hasattr(self, "parrot_status"):
             self.parrot_status.setText("Papagei: bereit")
 
@@ -482,8 +520,12 @@ class MainWindow(QMainWindow):
             return
         if mode == "radio_parrot" and not self.gateway_started:
             return
-        if mode == "voip_parrot" and not self.mumble_native.connected:
-            return
+        if mode == "voip_parrot":
+            if self.voip_parrot_source.currentData() == "native_mumble":
+                if not self.mumble_native.connected:
+                    return
+            elif not self.voip_parrot_capture.running or time.monotonic() < self._parrot_tail_until:
+                return
         if not pcm:
             return
         level = self.radio_rx_detector._dbfs(pcm)
@@ -514,7 +556,55 @@ class MainWindow(QMainWindow):
         self._parrot_capture(pcm, int(rate), "radio_parrot")
 
     def _parrot_voip_pcm(self, pcm):
-        self._parrot_capture(pcm, 48000, "voip_parrot")
+        if hasattr(self, "voip_parrot_source") and self.voip_parrot_source.currentData() == "native_mumble":
+            self._parrot_capture(pcm, 48000, "voip_parrot")
+
+    def _parrot_generic_voip_pcm(self, pcm, rate):
+        if hasattr(self, "voip_parrot_source") and self.voip_parrot_source.currentData() == "generic":
+            self._parrot_capture(pcm, int(rate), "voip_parrot")
+
+    def _voip_parrot_source_changed(self, *_args):
+        self._stop_voip_parrot_capture()
+        self._parrot_reset()
+
+    def _start_voip_parrot_capture(self):
+        if self._mode() != "voip_parrot":
+            self.parrot_status.setText("Bitte erst VoIP-Papagei als Betriebsart wählen.")
+            return
+        if self.voip_parrot_source.currentData() == "native_mumble":
+            self.parrot_status.setText(
+                "Mumble-Direktmodus: " +
+                ("bereit" if self.mumble_native.connected else "bitte Mumble verbinden")
+            )
+            return
+        device = self.voip_parrot_input.currentData()
+        try:
+            self.voip_parrot_capture.start(device)
+            self.parrot_status.setText("Universeller VoIP-Papagei: nimmt Eingang auf")
+        except Exception as exc:
+            self._parrot_error(str(exc))
+
+    def _stop_voip_parrot_capture(self):
+        if hasattr(self, "voip_parrot_capture"):
+            self.voip_parrot_capture.stop()
+        if hasattr(self, "parrot_status"):
+            self.parrot_status.setText("VoIP-Aufnahme gestoppt")
+
+    def _refresh_voip_parrot_devices(self):
+        current_in = self.voip_parrot_input.currentData()
+        current_out = self.voip_parrot_output.currentData()
+        self.voip_parrot_input.clear()
+        self.voip_parrot_output.clear()
+        for index, name in input_devices():
+            self.voip_parrot_input.addItem(f"{index}: {name}", index)
+        for index, name in output_devices():
+            self.voip_parrot_output.addItem(f"{index}: {name}", index)
+        for combo, previous in ((self.voip_parrot_input, current_in),
+                                (self.voip_parrot_output, current_out)):
+            index = combo.findData(previous)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+
 
     def _parrot_tick(self):
         if not self._parrot_recording or self._parrot_playing:
@@ -537,7 +627,7 @@ class MainWindow(QMainWindow):
     def _parrot_play(self, chunks, rate, mode, generation):
         if generation != self._parrot_generation or self._mode() != mode:
             return
-        if mode == "voip_parrot" and not self.mumble_native.connected:
+        if mode == "voip_parrot" and self.voip_parrot_source.currentData() == "native_mumble" and not self.mumble_native.connected:
             self._parrot_reset()
             return
         if mode == "radio_parrot" and (not self.gateway_started or self.gateway_ptt is None):
@@ -545,7 +635,7 @@ class MainWindow(QMainWindow):
             return
         def worker():
             try:
-                if mode == "voip_parrot":
+                if mode == "voip_parrot" and self.voip_parrot_source.currentData() == "native_mumble":
                     state = None
                     for chunk in chunks:
                         if generation != self._parrot_generation or not self.mumble_native.connected:
@@ -554,6 +644,26 @@ class MainWindow(QMainWindow):
                             chunk, state = audioop.ratecv(chunk, 2, 1, rate, 48000, state)
                         self.mumble_native.send_parrot_pcm(chunk)
                         time.sleep(len(chunk) / (2 * 48000))
+                elif mode == "voip_parrot":
+                    import sounddevice as sd
+                    output = self.voip_parrot_output.currentData()
+                    if output is None:
+                        raise RuntimeError("VoIP-Wiedergabe-Ausgang fehlt")
+                    info = sd.query_devices(output, "output")
+                    out_rate = int(round(float(info.get("default_samplerate") or 48000)))
+                    state = None
+                    # Ignore capture during playback and a short cooldown to avoid feedback.
+                    duration = sum(len(part) for part in chunks) / (2 * rate)
+                    self._parrot_tail_until = time.monotonic() + duration + 1.0
+                    with sd.RawOutputStream(samplerate=out_rate, channels=1,
+                                            dtype="int16", device=output) as stream:
+                        for chunk in chunks:
+                            if generation != self._parrot_generation:
+                                break
+                            if out_rate != rate:
+                                chunk, state = audioop.ratecv(chunk, 2, 1, rate, out_rate, state)
+                            stream.write(chunk)
+                    self._parrot_tail_until = time.monotonic() + 0.8
                 else:
                     import sounddevice as sd
                     output = self.tx_audio_output.currentData()
@@ -3341,6 +3451,7 @@ class MainWindow(QMainWindow):
 
     def _mode_changed(self, *_args):
         self._parrot_reset()
+        self._stop_voip_parrot_capture()
         self._current_mode = self.operating_mode.currentData() or "pc"
         if self._current_mode not in ("gateway", "radio_parrot"):
             self._stop_tx_audio()
@@ -3368,7 +3479,7 @@ class MainWindow(QMainWindow):
             "pc": "PC-User: FRN und künftig TeamSpeak/Mumble ohne Funkhardware.",
             "gateway": "Funk-Gateway: Funk ↔ VoIP. Windows-Audio/PTT-Portierung läuft.",
             "radio_parrot": "Funk-Papagei: Funkaufnahme und Rückgabe über Funk-TX (Testbetrieb).",
-            "voip_parrot": "VoIP-Papagei: Mumble-Audio aufnehmen und in denselben Kanal zurückgeben (Testbetrieb).",
+            "voip_parrot": "VoIP-Papagei: TeamSpeak/Mumble/FRN/TeamTalk über Audiogeräte oder Mumble direkt (Testbetrieb).",
         }
         self.mode_note.setText(descriptions.get(mode, ""))
         if mode == "pc":
@@ -5210,6 +5321,15 @@ class MainWindow(QMainWindow):
                 self.dtmf_lockout_seconds.setValue(int(ptt_cfg.get("dtmf_lockout_seconds", 60)))
                 self._configure_dtmf()
             parrot_cfg = data.get("parrot", {})
+            voip_cfg = parrot_cfg.get("voip", {})
+            vi = self.voip_parrot_source.findData(str(voip_cfg.get("source", "generic")))
+            if vi >= 0:
+                self.voip_parrot_source.setCurrentIndex(vi)
+            for combo, value in ((self.voip_parrot_input, voip_cfg.get("input")),
+                                 (self.voip_parrot_output, voip_cfg.get("output"))):
+                idx = combo.findData(value)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
             self.parrot_threshold.setValue(float(parrot_cfg.get("threshold", -35)))
             self.parrot_silence_ms.setValue(int(parrot_cfg.get("silence_ms", 1200)))
             self.parrot_pause_ms.setValue(int(parrot_cfg.get("pause_ms", 800)))
@@ -5272,6 +5392,11 @@ class MainWindow(QMainWindow):
                 "silence_ms": self.parrot_silence_ms.value(),
                 "pause_ms": self.parrot_pause_ms.value(),
                 "max_seconds": self.parrot_max_seconds.value(),
+                "voip": {
+                    "source": self.voip_parrot_source.currentData(),
+                    "input": self.voip_parrot_input.currentData(),
+                    "output": self.voip_parrot_output.currentData(),
+                },
             },
             "ptt": {
                 "backend": self.gateway_ptt_backend.currentData(),
