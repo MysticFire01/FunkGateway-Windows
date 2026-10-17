@@ -216,6 +216,9 @@ class MainWindow(QMainWindow):
         self.emergency_main_btn = self._big("NOT-AUS / PTT AUS")
         self.ident_main_btn = self._big("Rufzeichen jetzt senden")
         self.frn_ptt_btn = self._big("FRN PTT")
+        self.mumble_ptt_top_btn = self._big("Mumble PTT")
+        self.mumble_ptt_top_btn.setVisible(False)
+        self.mumble_ptt_top_btn.setEnabled(False)
 
         self.start_main_btn.clicked.connect(self._start_gateway_ptt)
         self.stop_main_btn.clicked.connect(self._stop_gateway_ptt)
@@ -228,10 +231,12 @@ class MainWindow(QMainWindow):
         self.emergency_main_btn.clicked.connect(self._emergency)
         self.frn_ptt_btn.pressed.connect(self._main_ptt_pressed)
         self.frn_ptt_btn.released.connect(self._main_ptt_released)
+        self.mumble_ptt_top_btn.pressed.connect(self._mumble_pc_ptt_press)
+        self.mumble_ptt_top_btn.released.connect(self._mumble_pc_ptt_release)
 
         for button in (
             self.start_main_btn, self.stop_main_btn, self.emergency_main_btn,
-            self.ident_main_btn, self.frn_ptt_btn
+            self.ident_main_btn, self.frn_ptt_btn, self.mumble_ptt_top_btn
         ):
             row.addWidget(button)
 
@@ -1726,6 +1731,14 @@ class MainWindow(QMainWindow):
                 connected and self._mode() == "pc"
                 and self.mumble_pc_ptt_enabled.isChecked()
             )
+        if hasattr(self, "mumble_ptt_top_btn"):
+            self.mumble_ptt_top_btn.setVisible(
+                connected and self._mode() == "pc"
+            )
+            self.mumble_ptt_top_btn.setEnabled(
+                connected and self._mode() == "pc"
+                and self.mumble_pc_ptt_enabled.isChecked()
+            )
         self._configure_mumble_hotkey()
         if connected:
             self.status_mumble.setText("Mumble: Native Gateway verbunden")
@@ -1893,6 +1906,11 @@ class MainWindow(QMainWindow):
         self.mumble_pc_ptt_btn.setStyleSheet(
             "background:#E53935;color:white;font-weight:bold;"
         )
+        if hasattr(self, "mumble_ptt_top_btn"):
+            self.mumble_ptt_top_btn.setText("Mumble PTT · SENDEN")
+            self.mumble_ptt_top_btn.setStyleSheet(
+                "background:#E53935;color:white;font-weight:bold;"
+            )
 
     def _mumble_pc_ptt_release(self):
         if not self._mumble_pc_ptt_active:
@@ -1901,6 +1919,9 @@ class MainWindow(QMainWindow):
         self._mumble_pc_ptt_active = False
         self.mumble_pc_ptt_btn.setText("Mumble PTT halten")
         self.mumble_pc_ptt_btn.setStyleSheet("")
+        if hasattr(self, "mumble_ptt_top_btn"):
+            self.mumble_ptt_top_btn.setText("Mumble PTT")
+            self.mumble_ptt_top_btn.setStyleSheet("")
 
     def _selected_mumble_certificate(self):
         if not hasattr(self, "mumble_cert_select"):
@@ -2346,10 +2367,16 @@ class MainWindow(QMainWindow):
             self.frn_ptt_btn.setText("FRN PTT")
             self.frn_ptt_btn.setEnabled(True)
             self.frn_ptt_btn.setVisible(True)
+            self.mumble_ptt_top_btn.setVisible(bool(self.mumble_native.connected))
+            self.mumble_ptt_top_btn.setEnabled(
+                bool(self.mumble_native.connected)
+                and self.mumble_pc_ptt_enabled.isChecked()
+            )
         else:
             # Gateway hardware PTT is tested/configured under PTT / Modem.
             # Keep the permanent top bar uncluttered outside PC-user mode.
             self.frn_ptt_btn.setVisible(False)
+            self.mumble_ptt_top_btn.setVisible(False)
 
         palette = getattr(self, "current_theme_palette", {}) or {}
         color = MODE_COLORS.get(mode, palette.get("accent", "#2F80ED")) if self.mode_colors.isChecked() else palette.get("accent", "#2F80ED")
