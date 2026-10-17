@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.32 – Cryptography-Rust-Binding im Windows-Build
+
+- behebt beim Erstellen eines Mumble-Zertifikats:
+  - „No module named cryptography.hazmat.bindings._rust“
+- PyInstaller sammelt jetzt gezielt die nativen cryptography-Binaries ein
+- Rust-Binding wird zusätzlich explizit als Hidden Import angegeben
+- Build validiert den Import von cryptography.hazmat.bindings._rust vor PyInstaller
+- kein collect-all für cryptography: Build bleibt so schlank wie möglich
+- Mumble-Channelauswahl auf Baumstruktur umgestellt
+- Live-Nutzerzahl je Channel
+- aktueller Channel wird hervorgehoben
+- Doppelklick wechselt direkt in einen Channel
+- Mundsymbol sitzt jetzt direkt links vor dem Teilnehmernamen
+- grün = schweigt, rot = spricht, blau = flüstert
+- separate Mund-Spalte entfällt
+
 ## 0.2.31 – Mumble PC-PTT, Teilnehmerstatus und Zertifikate
 
 - PC-User-Modus erhält eigene Mumble-Mikrofon-PTT
