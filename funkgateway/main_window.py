@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import io
 import json
 import os
+import secrets
+import struct
 import subprocess
 import time
+from urllib.parse import quote
 
 from PySide6.QtCore import QTimer, QObject, QThread, Signal, Qt
 from PySide6.QtGui import QPixmap, QPainter, QPainterPath, QColor, QIcon, QPen, QBrush
@@ -12,7 +19,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QTabWidget, QGroupBox, QFormLayout,
     QCheckBox, QScrollArea, QPlainTextEdit, QLineEdit, QDoubleSpinBox, QSpinBox,
     QInputDialog, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QTreeWidget, QTreeWidgetItem, QFileDialog, QMenu
+    QAbstractItemView, QTreeWidget, QTreeWidgetItem, QFileDialog, QMenu, QDialog
 )
 
 from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
@@ -113,6 +120,12 @@ class MainWindow(QMainWindow):
         self.gateway_ptt = None
         self.gateway_started = False
         self._last_dtmf_command_at = 0.0
+        self._dtmf_totp_secret = ""
+        self._dtmf_totp_last_counter = -1
+        self._dtmf_failed_attempts = 0
+        self._dtmf_locked_until = 0.0
+        self._dtmf_pin_salt = ""
+        self._dtmf_pin_hash = ""
 
         self.ts_client = TeamSpeakClientQuery()
         self.mumble_backend = MumbleWindowsBackend()
@@ -272,6 +285,7 @@ class MainWindow(QMainWindow):
         self._build_setup()
         self._build_audio()
         self._build_ptt()
+        self._build_dtmf()
         self._build_protection()
         self._build_integrations()
         self._build_appearance()
@@ -492,31 +506,6 @@ class MainWindow(QMainWindow):
         hf.addRow("", test)
         v.addWidget(hw)
 
-        dtmf = QGroupBox("DTMF Fernsteuerung")
-        df = QFormLayout(dtmf)
-        self.dtmf_enabled = QCheckBox("DTMF-Steuerung aktiv")
-        self.dtmf_pin = QLineEdit()
-        self.dtmf_pin.setEchoMode(QLineEdit.EchoMode.Password)
-        self.dtmf_pin.setMaxLength(8)
-        self.dtmf_pin.setPlaceholderText("4–8 Ziffern")
-        self.dtmf_status = QLabel("DTMF: aus")
-        self.dtmf_status.setWordWrap(True)
-        self.dtmf_last_digit = QLabel("Letzte Taste: —")
-        self.dtmf_note = QLabel(
-            "Befehle: *PIN*1# = Gateway starten · "
-            "*PIN*0# = Gateway stoppen · *PIN*9# = NOT-AUS / PTT AUS. "
-            "Die Funktion ist standardmäßig aus."
-        )
-        self.dtmf_note.setWordWrap(True)
-        self.dtmf_enabled.toggled.connect(self._configure_dtmf)
-        self.dtmf_pin.textChanged.connect(self._configure_dtmf)
-        df.addRow("", self.dtmf_enabled)
-        df.addRow("DTMF-PIN:", self.dtmf_pin)
-        df.addRow("", self.dtmf_last_digit)
-        df.addRow("Status:", self.dtmf_status)
-        df.addRow("", self.dtmf_note)
-        v.addWidget(dtmf)
-
         frn = QGroupBox("FRN PTT")
         ff = QFormLayout(frn)
         ff.addRow("Status:", QLabel("Lokaler/systemweiter Hotkey, Hold/Latch und TX-Zeitlimit bleiben aktiv."))
@@ -532,6 +521,157 @@ class MainWindow(QMainWindow):
         v.addStretch(1)
         self._refresh_gateway_ptt_ports()
         self._scroll_tab(page, "PTT / Modem")
+
+    def _build_dtmf(self):
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        tabs = QTabWidget()
+        outer.addWidget(tabs)
+        commands = QWidget()
+        cf = QFormLayout(commands)
+        self.dtmf_enabled = QCheckBox("DTMF-Steuerung aktiv")
+        self.dtmf_status = QLabel("DTMF: aus")
+        self.dtmf_status.setWordWrap(True)
+        self.dtmf_last_digit = QLabel("Letzte Taste: —")
+        self.dtmf_note = QLabel("Befehle: *CODE*1# starten · *CODE*0# stoppen · *CODE*9# NOT-AUS. CODE ist die PIN oder der aktuelle TOTP-Code.")
+        self.dtmf_note.setWordWrap(True)
+        cf.addRow("", self.dtmf_enabled)
+        cf.addRow("", self.dtmf_note)
+        cf.addRow("", self.dtmf_last_digit)
+        cf.addRow("Status:", self.dtmf_status)
+        tabs.addTab(commands, "Befehle")
+
+        auth = QWidget()
+        af = QFormLayout(auth)
+        self.dtmf_auth_method = QComboBox()
+        self.dtmf_auth_method.addItem("PIN", "pin")
+        self.dtmf_auth_method.addItem("TOTP (Google Authenticator)", "totp")
+        self.dtmf_pin = QLineEdit()
+        self.dtmf_pin.setEchoMode(QLineEdit.EchoMode.Password)
+        self.dtmf_pin.setMaxLength(12)
+        self.dtmf_pin.setPlaceholderText("4–12 Ziffern")
+        self.dtmf_totp_account = QLineEdit("DTMF")
+        self.dtmf_totp_secret_view = QLineEdit()
+        self.dtmf_totp_secret_view.setReadOnly(True)
+        self.dtmf_totp_secret_view.setEchoMode(QLineEdit.EchoMode.Password)
+        show_secret = QCheckBox("Geheimnis anzeigen")
+        show_secret.toggled.connect(lambda checked: self.dtmf_totp_secret_view.setEchoMode(QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password))
+        generate = QPushButton("Neues TOTP-Geheimnis erzeugen")
+        generate.clicked.connect(self._generate_dtmf_totp_secret)
+        qr = QPushButton("QR-Code anzeigen")
+        qr.clicked.connect(self._show_dtmf_totp_qr)
+        copy_uri = QPushButton("Authenticator-URI kopieren")
+        copy_uri.clicked.connect(self._copy_dtmf_totp_uri)
+        self.dtmf_max_attempts = QSpinBox()
+        self.dtmf_max_attempts.setRange(1, 10)
+        self.dtmf_max_attempts.setValue(3)
+        self.dtmf_lockout_seconds = QSpinBox()
+        self.dtmf_lockout_seconds.setRange(10, 3600)
+        self.dtmf_lockout_seconds.setValue(60)
+        self.dtmf_lockout_seconds.setSuffix(" s")
+        af.addRow("AUTH-Verfahren:", self.dtmf_auth_method)
+        af.addRow("PIN:", self.dtmf_pin)
+        af.addRow("TOTP-Konto:", self.dtmf_totp_account)
+        af.addRow("TOTP-Geheimnis:", self.dtmf_totp_secret_view)
+        af.addRow("", show_secret)
+        af.addRow("", generate)
+        af.addRow("", qr)
+        af.addRow("", copy_uri)
+        af.addRow("Fehlversuche maximal:", self.dtmf_max_attempts)
+        af.addRow("Sperrzeit:", self.dtmf_lockout_seconds)
+        hint = QLabel("TOTP: 6 Ziffern, 30 Sekunden, SHA1. Uhrzeit von PC und Smartphone synchron halten. Ein erfolgreich verwendeter Zeitschritt wird nicht erneut akzeptiert.")
+        hint.setWordWrap(True)
+        af.addRow("", hint)
+        tabs.addTab(auth, "Authentifizierung")
+        self.dtmf_enabled.toggled.connect(self._configure_dtmf)
+        self.dtmf_pin.textChanged.connect(self._configure_dtmf)
+        self.dtmf_auth_method.currentIndexChanged.connect(self._configure_dtmf)
+        self._scroll_tab(page, "DTMF")
+
+    def _generate_dtmf_totp_secret(self):
+        if self._dtmf_totp_secret:
+            answer = QMessageBox.question(self, "TOTP ersetzen", "Vorhandenes Geheimnis ersetzen? Bisherige Authenticator-Codes werden ungültig.")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self._dtmf_totp_secret = base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+        self._dtmf_totp_last_counter = -1
+        self.dtmf_totp_secret_view.setText(self._dtmf_totp_secret)
+        self._configure_dtmf()
+        self._save_config()
+
+    def _dtmf_totp_uri(self):
+        if not self._dtmf_totp_secret:
+            return ""
+        account = self.dtmf_totp_account.text().strip() or "DTMF"
+        return ("otpauth://totp/" + quote("FunkGateway:" + account, safe="") +
+                "?secret=" + quote(self._dtmf_totp_secret, safe="") +
+                "&issuer=FunkGateway&algorithm=SHA1&digits=6&period=30")
+
+    def _copy_dtmf_totp_uri(self):
+        uri = self._dtmf_totp_uri()
+        if not uri:
+            QMessageBox.warning(self, "TOTP", "Zuerst ein Geheimnis erzeugen.")
+            return
+        QApplication.clipboard().setText(uri)
+        QMessageBox.information(self, "TOTP", "Authenticator-URI kopiert. Die Zwischenablage enthält jetzt ein Geheimnis.")
+
+    def _show_dtmf_totp_qr(self):
+        uri = self._dtmf_totp_uri()
+        if not uri:
+            QMessageBox.warning(self, "TOTP", "Zuerst ein Geheimnis erzeugen.")
+            return
+        try:
+            import qrcode
+            img = qrcode.make(uri)
+            buffer = io.BytesIO()
+            img.save(buffer, format="PNG")
+            pix = QPixmap()
+            if not pix.loadFromData(buffer.getvalue(), "PNG"):
+                raise RuntimeError("QR-Code konnte nicht geladen werden")
+            dialog = QDialog(self)
+            dialog.setWindowTitle("FunkGateway – Authenticator QR-Code")
+            layout = QVBoxLayout(dialog)
+            info = QLabel("Mit Google Authenticator oder einer anderen TOTP-App scannen. QR-Code nicht weitergeben.")
+            info.setWordWrap(True)
+            layout.addWidget(info)
+            picture = QLabel()
+            picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            picture.setPixmap(pix.scaled(340, 340, Qt.AspectRatioMode.KeepAspectRatio))
+            layout.addWidget(picture)
+            close = QPushButton("Schließen")
+            close.clicked.connect(dialog.accept)
+            layout.addWidget(close)
+            dialog.exec()
+        except ImportError:
+            QMessageBox.warning(self, "QR-Code", "Python-Paket 'qrcode[pil]' fehlt. Bitte im Build als Abhängigkeit hinzufügen.")
+        except Exception as exc:
+            QMessageBox.warning(self, "QR-Code", str(exc))
+
+    def _verify_dtmf_totp(self, code):
+        try:
+            secret = self._dtmf_totp_secret
+            key = base64.b32decode(secret + "=" * (-len(secret) % 8), casefold=True)
+            if not (code.isdigit() and len(code) == 6):
+                return False
+            current = int(time.time() // 30)
+            for counter in (current, current - 1, current + 1):
+                digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+                offset = digest[-1] & 15
+                number = int.from_bytes(digest[offset:offset + 4], "big") & 0x7fffffff
+                expected = str(number % 1000000).zfill(6)
+                if hmac.compare_digest(expected, code) and counter > self._dtmf_totp_last_counter:
+                    self._dtmf_totp_last_counter = counter
+                    self._save_config()
+                    return True
+        except (ValueError, TypeError, OverflowError):
+            pass
+        return False
+
+    def _dtmf_pin_valid(self, pin):
+        if self._dtmf_pin_hash and self._dtmf_pin_salt:
+            digest = hashlib.pbkdf2_hmac("sha256", pin.encode(), bytes.fromhex(self._dtmf_pin_salt), 120000)
+            return hmac.compare_digest(digest.hex(), self._dtmf_pin_hash)
+        return hmac.compare_digest(pin, self.dtmf_pin.text().strip())
 
     def _build_protection(self):
         """Linux-style protection tabs; reuse the existing Windows safety controls."""
@@ -3364,10 +3504,11 @@ class MainWindow(QMainWindow):
     def _configure_dtmf(self, *_args):
         if not hasattr(self, "dtmf_enabled"):
             return
+        method = self.dtmf_auth_method.currentData()
         pin = self.dtmf_pin.text().strip()
-        valid_pin = pin.isdigit() and 4 <= len(pin) <= 8
+        valid = bool(self._dtmf_totp_secret) if method == "totp" else bool(self._dtmf_pin_hash or (pin.isdigit() and 4 <= len(pin) <= 12))
         mode_ok = self._mode() in ("gateway", "radio_parrot")
-        enabled = self.dtmf_enabled.isChecked() and valid_pin and mode_ok
+        enabled = self.dtmf_enabled.isChecked() and valid and mode_ok
         self.dtmf_decoder.configure(enabled=enabled)
         if enabled:
             if hasattr(self, "radio_rx_detector") and not self.radio_rx_detector.running:
@@ -3375,13 +3516,14 @@ class MainWindow(QMainWindow):
         elif not self.gateway_started:
             self._stop_radio_rx_detector()
         if not self.dtmf_enabled.isChecked():
-            self.dtmf_status.setText("DTMF: aus")
-        elif not valid_pin:
-            self.dtmf_status.setText("DTMF: bitte 4–8 Ziffern als PIN eingeben")
+            status = "DTMF: aus"
+        elif not valid:
+            status = "DTMF: PIN oder TOTP-Geheimnis einrichten"
         elif not mode_ok:
-            self.dtmf_status.setText("DTMF: wartet auf Funk-Gateway/Funk-Papagei")
+            status = "DTMF: wartet auf Funk-Gateway/Funk-Papagei"
         else:
-            self.dtmf_status.setText("DTMF: bereit · Befehle mit PIN geschützt")
+            status = "DTMF: bereit · " + ("TOTP" if method == "totp" else "PIN")
+        self.dtmf_status.setText(status)
 
     def _dtmf_digit_received(self, digit):
         if hasattr(self, "dtmf_last_digit"):
@@ -3408,11 +3550,19 @@ class MainWindow(QMainWindow):
             self.dtmf_status.setText("DTMF: ungültiges Befehlsformat")
             return
         pin, command = parts
-        if pin != self.dtmf_pin.text().strip():
-            self.dtmf_status.setText("DTMF: falsche PIN")
-            if hasattr(self, "ui_log"):
-                self.ui_log.appendPlainText("DTMF: Befehl mit falscher PIN verworfen.")
+        if time.monotonic() < self._dtmf_locked_until:
+            self.dtmf_status.setText("DTMF: nach Fehlversuchen vorübergehend gesperrt")
             return
+        valid = (self._verify_dtmf_totp(pin) if self.dtmf_auth_method.currentData() == "totp"
+                 else self._dtmf_pin_valid(pin))
+        if not valid:
+            self._dtmf_failed_attempts += 1
+            if self._dtmf_failed_attempts >= self.dtmf_max_attempts.value():
+                self._dtmf_locked_until = time.monotonic() + self.dtmf_lockout_seconds.value()
+                self._dtmf_failed_attempts = 0
+            self.dtmf_status.setText("DTMF: Authentifizierung fehlgeschlagen")
+            return
+        self._dtmf_failed_attempts = 0
 
         if command == "0":
             self.dtmf_status.setText("DTMF: Gateway stoppen")
@@ -4722,7 +4872,20 @@ class MainWindow(QMainWindow):
                 self.gateway_return_guard.setValue(int(ptt_cfg.get("return_guard_ms", 900)))
                 self.gateway_rx_confirm.setValue(int(ptt_cfg.get("rx_confirm_ms", 100)))
                 self.dtmf_enabled.setChecked(bool(ptt_cfg.get("dtmf_enabled", False)))
-                self.dtmf_pin.setText(str(ptt_cfg.get("dtmf_pin", "")))
+                self._dtmf_totp_secret = str(ptt_cfg.get("dtmf_totp_secret", ""))
+                self._dtmf_totp_last_counter = int(ptt_cfg.get("dtmf_totp_last_counter", -1))
+                self.dtmf_totp_secret_view.setText(self._dtmf_totp_secret)
+                self._dtmf_pin_salt = str(ptt_cfg.get("dtmf_pin_salt", ""))
+                self._dtmf_pin_hash = str(ptt_cfg.get("dtmf_pin_hash", ""))
+                legacy_pin = str(ptt_cfg.get("dtmf_pin", ""))
+                if legacy_pin and not self._dtmf_pin_hash:
+                    self.dtmf_pin.setText(legacy_pin)
+                idx = self.dtmf_auth_method.findData(str(ptt_cfg.get("dtmf_auth_method", "pin")))
+                if idx >= 0:
+                    self.dtmf_auth_method.setCurrentIndex(idx)
+                self.dtmf_totp_account.setText(str(ptt_cfg.get("dtmf_totp_account", "DTMF")))
+                self.dtmf_max_attempts.setValue(int(ptt_cfg.get("dtmf_max_attempts", 3)))
+                self.dtmf_lockout_seconds.setValue(int(ptt_cfg.get("dtmf_lockout_seconds", 60)))
                 self._configure_dtmf()
             ts_cfg = data.get("teamspeak", {})
             if hasattr(self, "ts_host"):
@@ -4792,7 +4955,15 @@ class MainWindow(QMainWindow):
                 "return_guard_ms": self.gateway_return_guard.value(),
                 "rx_confirm_ms": self.gateway_rx_confirm.value(),
                 "dtmf_enabled": self.dtmf_enabled.isChecked(),
-                "dtmf_pin": self.dtmf_pin.text().strip(),
+                "dtmf_auth_method": self.dtmf_auth_method.currentData(),
+                "dtmf_totp_secret": self._dtmf_totp_secret,
+                "dtmf_totp_last_counter": self._dtmf_totp_last_counter,
+                "dtmf_totp_account": self.dtmf_totp_account.text().strip(),
+                "dtmf_max_attempts": self.dtmf_max_attempts.value(),
+                "dtmf_lockout_seconds": self.dtmf_lockout_seconds.value(),
+                "dtmf_pin_salt": self._dtmf_pin_salt,
+                "dtmf_pin_hash": self._dtmf_pin_hash,
+                "dtmf_pin": self.dtmf_pin.text().strip() if not self._dtmf_pin_hash else "",
             },
             "mumble": {
                 "enabled": self.mumble_enabled.isChecked() if hasattr(self, "mumble_enabled") else True,
