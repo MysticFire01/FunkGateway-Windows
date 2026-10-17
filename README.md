@@ -561,3 +561,19 @@ provides a separate local output-device selector for speakers/headphones.
 Received Mumble PCM can be played directly through the selected Windows audio
 device using the already bundled sounddevice backend. Local playback and the
 Mumble-to-radio TX path remain independent, so no virtual audio cable is needed.
+
+
+## Mumble global PTT and certificate runtime fix 0.2.35
+
+Mumble PC-user PTT now has its own local/global shortcut path independent from
+FRN. This allows simultaneous FRN and Mumble connections with separate PTT keys
+(for example FRN F9 and Mumble F10).
+
+The local Mumble user is shown with an orange mouth while transmitting. This
+state is tracked locally because a Mumble server normally does not echo a
+client's own voice back to that same client.
+
+For certificate support the Windows build now resolves the exact installed
+`cryptography.hazmat.bindings._rust` extension path and injects that single
+native module into the correct PyInstaller package directory. A post-build
+check fails the workflow if the Rust binding is missing.
