@@ -3956,8 +3956,11 @@ class MainWindow(QMainWindow):
             try:
                 if self.mumble_native.connected and hasattr(self, "mumble_radio_to_net"):
                     self.mumble_native.set_radio_to_mumble(
-                        self.mumble_radio_to_net.isChecked(),
+                        self._mode() == "gateway" and self.mumble_radio_to_net.isChecked(),
                         confirm_ms=self.gateway_rx_confirm.value(),
+                    )
+                    self.mumble_native.set_receive_to_radio(
+                        self._mode() == "gateway" and self.mumble_net_to_radio.isChecked()
                     )
             except Exception:
                 pass
