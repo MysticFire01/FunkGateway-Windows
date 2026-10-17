@@ -301,3 +301,15 @@ Funk→TeamSpeak can use the bundled native TS3 plugin instead of a virtual audi
 cable. FunkGateway sends 48 kHz mono PCM to localhost, the plugin injects it
 into TeamSpeak capture, temporarily enables continuous transmission during
 bridge audio, and restores the previous PTT/VAD state afterwards.
+
+
+## Generic audio-driven radio TX 0.2.10
+
+The radio PTT layer is no longer tied to a specific VoIP integration. Any PCM
+source can feed the same AudioTxEngine. The engine performs activity detection,
+short pre-roll, hang time, radio-output playback and the existing RTS/DTR PTT.
+
+Windows system audio can be captured through the bundled native WASAPI loopback
+helper. This allows applications such as TeamSpeak, VLC, browsers and media
+players to use the same generic radio TX path. A normal microphone/USB audio
+input can also be selected for testing without radio hardware.
