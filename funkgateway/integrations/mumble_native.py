@@ -196,6 +196,38 @@ class MumbleNativeGateway(QObject):
         )
         self._connect_thread.start()
 
+    @staticmethod
+    def _connection_diagnostics(host, port):
+        """Report DNS, TCP and TLS stages after a failed pymumble connection."""
+        import socket
+        import ssl
+        try:
+            addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except OSError as exc:
+            return "DNS-Fehler: " + str(exc)
+        if not addresses:
+            return "DNS: keine TCP-Adressen"
+        errors = []
+        for family, socktype, proto, _canon, sockaddr in addresses:
+            family_name = "IPv6" if family == socket.AF_INET6 else "IPv4"
+            ip = str(sockaddr[0])
+            try:
+                with socket.socket(family, socktype, proto) as sock:
+                    sock.settimeout(5)
+                    sock.connect(sockaddr)
+                    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                    context.check_hostname = False
+                    context.verify_mode = ssl.CERT_NONE
+                    with context.wrap_socket(sock, server_hostname=host) as tls:
+                        return (
+                            f"TCP/TLS zu {ip} ({family_name}) erfolgreich: "
+                            f"{tls.version()}. Fehler wahrscheinlich erst bei "
+                            "Mumble-Authentifizierung oder Protokollverarbeitung."
+                        )
+            except (OSError, ssl.SSLError) as exc:
+                errors.append(f"{family_name} {ip}: {type(exc).__name__}: {exc}")
+        return " | ".join(errors[:4])
+
     def _connect_worker(self, host, port, nickname, password, channel_path):
         try:
             pymumble, cb_sound = self._import_pymumble()
@@ -222,11 +254,11 @@ class MumbleNativeGateway(QObject):
             state = int(getattr(mumble, "connected", 0))
             session = getattr(mumble.users, "myself_session", None)
             if state != 2 or session is None:
+                diagnosis = self._connection_diagnostics(host, port)
                 raise RuntimeError(
                     "Mumble-Anmeldung nicht abgeschlossen "
                     f"(Protokollstatus={state}, Session={session}). "
-                    "Status 3 bedeutet Verbindungsfehler. "
-                    "Bitte Serveradresse, Port, Zertifikat und Verbindung prüfen."
+                    + diagnosis
                 )
 
             if self._stop.is_set():
