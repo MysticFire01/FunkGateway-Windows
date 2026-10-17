@@ -662,6 +662,9 @@ class MainWindow(QMainWindow):
     def _parrot_play(self, chunks, rate, mode, generation):
         if generation != self._parrot_generation or self._mode() != mode:
             return
+        if mode == "voip_parrot" and not self._voip_parrot_enabled:
+            self._parrot_reset()
+            return
         if mode == "voip_parrot" and self.voip_parrot_source.currentData() == "native_mumble" and not self.mumble_native.connected:
             self._parrot_reset()
             return
@@ -731,7 +734,7 @@ class MainWindow(QMainWindow):
     def _parrot_done(self, generation):
         if generation == self._parrot_generation:
             self._parrot_playing = False
-            self.parrot_status.setText("Papagei: bereit")
+            self.parrot_status.setText("Papagei: bereit für die nächste Aufnahme")
 
     def _parrot_error(self, message):
         self.parrot_status.setText("Papagei: Fehler – " + str(message))
@@ -2102,6 +2105,8 @@ class MainWindow(QMainWindow):
             self.mumble_native_connect_btn.setEnabled(True)
             self.mumble_native_disconnect_btn.setEnabled(False)
             self._clear_mumble_runtime_views()
+            if self._mode() == "voip_parrot" and self.voip_parrot_source.currentData() == "native_mumble":
+                self._stop_voip_parrot_capture()
             if self._mumble_owns_tx_engine:
                 self.tx_audio_engine.stop()
                 self._mumble_owns_tx_engine = False
@@ -5571,6 +5576,7 @@ class MainWindow(QMainWindow):
         CFG_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def closeEvent(self, event):
+        self._stop_voip_parrot_capture()
         try:
             self.hide()
             QApplication.processEvents()
