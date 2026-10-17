@@ -460,6 +460,8 @@ class FrnNativeClient:
         self.tx_granted_evt = threading.Event()
         self.tx_thread = None
         self.current_talker_index = 0
+        self.local_mute = False
+        self.local_deaf = False
 
     def _set_state(self, state):
         # Alpha 9: identische Zustände nicht erneut loggen.
@@ -529,8 +531,19 @@ class FrnNativeClient:
                     "WARN: FRN-Thread reagierte beim Stoppen nicht innerhalb von 3 s."
                 )
 
+    def set_local_mute(self, enabled: bool):
+        self.local_mute = bool(enabled)
+        if self.local_mute and self.want_tx.is_set():
+            self.request_tx(False)
+
+    def set_local_deaf(self, enabled: bool):
+        self.local_deaf = bool(enabled)
+
     def request_tx(self, enabled: bool):
         if enabled:
+            if self.local_mute:
+                self.signals.error.emit("FRN Mikrofon ist stummgeschaltet.")
+                return
             if not self.cfg.audio_enabled:
                 self.signals.error.emit("Audio ist nicht aktiviert.")
                 return
@@ -656,7 +669,8 @@ class FrnNativeClient:
                             self.output_rate,
                             self.rx_rate_state,
                         )
-                    self.output_stream.write(playback)
+                    if not self.local_deaf:
+                        self.output_stream.write(playback)
             except Exception as exc:
                 self.signals.error.emit("FRN RX-Audio: " + str(exc))
 
