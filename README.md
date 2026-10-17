@@ -4,7 +4,7 @@ Native Windows port of FunkGateway.
 
 ## Status
 
-**0.1.18 Portable Preview**
+**0.1.19 Portable Preview**
 
 Initial goals:
 
@@ -24,7 +24,7 @@ The packaged Windows EXE stores all FunkGateway-owned writable data on the same
 drive as the application:
 
 ```text
-FunkGateway-Windows-0.1.18\
+FunkGateway-Windows-0.1.19\
   FunkGateway-Windows.exe
   config\
     config.json
@@ -190,3 +190,12 @@ From 0.1.18 the Windows client defaults to FRN client protocol version
 server version and must not be copied into the client VX field. This improves
 compatibility with older/filtered FRN servers while keeping the normal PC-only
 client class `CL=2`.
+
+
+## FRN BC/client-class compatibility
+
+From 0.1.19 the FRN `BC` field is generated according to the protocol client
+class. `CL=2` always sends `BC=PC Only`, `CL=0` always sends
+`BC=Crosslink`, and `CL=1` uses the configured gateway band/channel string.
+This fixes logins rejected by servers that validate the consistency of CL and BC.
+The empty VX fallback is also corrected to `2014003`.
