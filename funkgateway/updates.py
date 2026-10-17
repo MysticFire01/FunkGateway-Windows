@@ -147,8 +147,17 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 ("[" + (Get-Date -Format s) + "] Target=" + $target) | Add-Content -LiteralPath $log
 
 try {{
-    Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue
-    Start-Sleep -Milliseconds 750
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 250
+    }
+    if (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) {
+        ("[" + (Get-Date -Format s) + "] Old process still alive after timeout; forcing stop.") | Add-Content -LiteralPath $log
+        Stop-Process -Id $pidToWait -Force -ErrorAction Stop
+        Start-Sleep -Milliseconds 750
+    } else {
+        Start-Sleep -Milliseconds 500
+    }
     ("[" + (Get-Date -Format s) + "] FunkGateway process stopped.") | Add-Content -LiteralPath $log
 
     $items = Get-ChildItem -LiteralPath $source -Force | Where-Object {{
