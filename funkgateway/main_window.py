@@ -31,6 +31,7 @@ import funkgateway.updates as updates
 from .global_hotkey import GlobalPttHotkey
 from .hotkeys import LocalPttHotkey, ModifierHoldWatcher
 from .integrations.frn_panel import FrnPanel, HotkeyCaptureButton
+from .integrations.chat_widgets import PrivateChatDialog, emoji_button
 from .integrations.zello_panel import ZelloPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
 from .ptt import DryPTT, SerialPTT, SafetyPTT, serial_ports
@@ -1756,6 +1757,7 @@ class MainWindow(QMainWindow):
         self.mumble_chat_send_btn.clicked.connect(self._mumble_send_chat)
         self.mumble_chat_send_btn.setEnabled(False)
         send_row.addWidget(self.mumble_chat_input, 1)
+        send_row.addWidget(emoji_button(self.mumble_chat_input,'mumble',self))
         send_row.addWidget(self.mumble_chat_send_btn)
         cv.addLayout(send_row)
         hint = QLabel(
@@ -2786,11 +2788,27 @@ class MainWindow(QMainWindow):
             f"[{datetime.now():%H:%M:%S}] {label}: {message}"
         )
 
+    def _mumble_private_window(self,session,name):
+        if not hasattr(self,"_mumble_private_chats"):
+            self._mumble_private_chats={}
+        chat=self._mumble_private_chats.get(session)
+        if chat is None:
+            def send(target,message):
+                self.mumble_native.send_chat(message,session=target)
+            chat=PrivateChatDialog(session,name,send,"mumble",self)
+            self._mumble_private_chats[session]=chat
+            chat.finished.connect(lambda _result,key=session:self._mumble_private_chats.pop(key,None))
+        chat.show(); chat.raise_(); chat.activateWindow()
+        return chat
+
     def _mumble_chat_received(self, item):
         actor = item.get("actor")
         sender = self.mumble_native.chat_sender_name(actor)
         scope = "Privat" if item.get("sessions") else "Channel/Server"
-        self._mumble_chat_line(f"{scope} · {sender}", item.get("message", ""))
+        if item.get("sessions") and actor is not None:
+            self._mumble_private_window(int(actor),sender).append_message(sender,item.get("message",""))
+        else:
+            self._mumble_chat_line(f"{scope} · {sender}", item.get("message", ""))
 
     def _mumble_send_chat(self):
         message = self.mumble_chat_input.text().strip()
@@ -2800,7 +2818,11 @@ class MainWindow(QMainWindow):
             sent = self.mumble_native.send_chat(
                 message, session=self.mumble_chat_target.currentData()
             )
-            self._mumble_chat_line(f"Ich → {sent['target']}", message)
+            target=self.mumble_chat_target.currentData()
+            if target is not None:
+                self._mumble_private_window(int(target),self.mumble_chat_target.currentText()).append_message("Ich",message)
+            else:
+                self._mumble_chat_line(f"Ich → {sent['target']}", message)
             self.mumble_chat_input.clear()
         except Exception as exc:
             QMessageBox.warning(self, "Mumble-Chat", str(exc))
@@ -2808,19 +2830,20 @@ class MainWindow(QMainWindow):
     def _update_mumble_chat_targets(self, participants):
         if not hasattr(self, "mumble_chat_target"):
             return
-        previous = self.mumble_chat_target.currentData()
+        choices=[("Aktueller Channel (öffentlich)",None)]
+        choices.extend((str(p.get("name") or "Unbekannt"),int(p["session"]))
+                       for p in participants if not p.get("is_self"))
+        current=[(self.mumble_chat_target.itemText(i),self.mumble_chat_target.itemData(i))
+                 for i in range(self.mumble_chat_target.count())]
+        if choices==current:
+            return
+        previous=self.mumble_chat_target.currentData()
         self.mumble_chat_target.blockSignals(True)
         self.mumble_chat_target.clear()
-        self.mumble_chat_target.addItem("Aktueller Channel (öffentlich)", None)
-        for participant in participants:
-            if participant.get("is_self"):
-                continue
-            self.mumble_chat_target.addItem(
-                str(participant.get("name") or "Unbekannt"),
-                int(participant["session"]),
-            )
-        index = self.mumble_chat_target.findData(previous)
-        self.mumble_chat_target.setCurrentIndex(index if index >= 0 else 0)
+        for label,session in choices:
+            self.mumble_chat_target.addItem(label,session)
+        idx=self.mumble_chat_target.findData(previous)
+        self.mumble_chat_target.setCurrentIndex(idx if idx>=0 else 0)
         self.mumble_chat_target.blockSignals(False)
 
     def _audio_tx_volume_changed(self, value):
