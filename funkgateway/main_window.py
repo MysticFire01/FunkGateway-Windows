@@ -839,6 +839,23 @@ class MainWindow(QMainWindow):
         self.tx_audio_hang.setSingleStep(50)
         self.tx_audio_hang.setValue(450)
         self.tx_audio_hang.setSuffix(" ms")
+        self.tx_audio_hysteresis = QDoubleSpinBox()
+        self.tx_audio_hysteresis.setRange(0.0, 20.0)
+        self.tx_audio_hysteresis.setDecimals(1)
+        self.tx_audio_hysteresis.setSingleStep(1.0)
+        self.tx_audio_hysteresis.setValue(6.0)
+        self.tx_audio_hysteresis.setSuffix(" dB")
+        self.tx_audio_hysteresis.setToolTip(
+            "Beim Senden gilt eine niedrigere Abschaltschwelle. "
+            "Verhindert PTT-Flattern bei leisen Silben.")
+        self.tx_audio_min_tx = QSpinBox()
+        self.tx_audio_min_tx.setRange(0, 5000)
+        self.tx_audio_min_tx.setSingleStep(50)
+        self.tx_audio_min_tx.setValue(350)
+        self.tx_audio_min_tx.setSuffix(" ms")
+        self.tx_audio_min_tx.setToolTip(
+            "Eine gestartete PTT bleibt mindestens so lange aktiv. "
+            "Die Sicherheitsabschaltung (TOT) bleibt wirksam.")
         self.audio_tx_volume = QSpinBox()
         self.audio_tx_volume.setRange(0, 200)
         self.audio_tx_volume.setValue(100)
@@ -861,6 +878,8 @@ class MainWindow(QMainWindow):
         f.addRow("Funk-TX Lautstärke:", self.audio_tx_volume)
         f.addRow("PTT-Schwellwert:", self.tx_audio_threshold)
         f.addRow("PTT-Nachlauf:", self.tx_audio_hang)
+        f.addRow("PTT-Hysterese:", self.tx_audio_hysteresis)
+        f.addRow("Minimale TX-Haltezeit:", self.tx_audio_min_tx)
         f.addRow("", refresh)
         f.addRow("Pegel:", self.tx_audio_level_label)
         f.addRow("Aktive Quelle:", self.tx_audio_source_label)
@@ -3641,6 +3660,8 @@ class MainWindow(QMainWindow):
                 self.gateway_ptt,
                 self.tx_audio_threshold.value(),
                 self.tx_audio_hang.value(),
+                self.tx_audio_hysteresis.value(),
+                self.tx_audio_min_tx.value(),
             )
             self._mumble_owns_tx_engine = True
             self.ui_log.appendPlainText(
@@ -3880,6 +3901,8 @@ class MainWindow(QMainWindow):
             getattr(self, "tx_audio_source_mode", None),
             getattr(self, "tx_audio_threshold", None),
             getattr(self, "tx_audio_hang", None),
+            getattr(self, "tx_audio_hysteresis", None),
+            getattr(self, "tx_audio_min_tx", None),
             getattr(self, "tx_audio_level_label", None),
             getattr(self, "tx_audio_source_label", None),
             getattr(self, "tx_audio_refresh_btn", None),
@@ -4217,6 +4240,8 @@ class MainWindow(QMainWindow):
                 self.gateway_ptt,
                 self.tx_audio_threshold.value(),
                 self.tx_audio_hang.value(),
+                self.tx_audio_hysteresis.value(),
+                self.tx_audio_min_tx.value(),
             )
             if source_mode == "wasapi_system":
                 self.tx_wasapi_source.start()
@@ -5954,6 +5979,8 @@ class MainWindow(QMainWindow):
                         self.tx_audio_output.setCurrentIndex(idx)
                 self.tx_audio_threshold.setValue(float(audio_cfg.get("tx_threshold", -40.0)))
                 self.tx_audio_hang.setValue(int(audio_cfg.get("tx_hang_ms", 450)))
+                self.tx_audio_hysteresis.setValue(float(audio_cfg.get("tx_hysteresis_db", 6.0)))
+                self.tx_audio_min_tx.setValue(int(audio_cfg.get("tx_min_tx_ms", 350)))
                 self.audio_tx_volume.setValue(int(audio_cfg.get("tx_volume", 100)))
 
             mumble_cfg = data.get("mumble", {})
@@ -6127,6 +6154,8 @@ class MainWindow(QMainWindow):
                 "tx_output": self.tx_audio_output.currentData(),
                 "tx_threshold": self.tx_audio_threshold.value(),
                 "tx_hang_ms": self.tx_audio_hang.value(),
+                "tx_hysteresis_db": self.tx_audio_hysteresis.value(),
+                "tx_min_tx_ms": self.tx_audio_min_tx.value(),
                 "tx_volume": self.audio_tx_volume.value(),
             },
             "parrot": {
