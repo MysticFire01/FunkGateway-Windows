@@ -890,23 +890,31 @@ class FrnNativeClient:
             self.signals.participant_list.emit(self._parsed_clients())
             self.signals.log.emit(f"FRN Clientliste: {len(items)} Teilnehmer.")
         elif kind == "TEXT_MESSAGE":
-            # FRN datatype 4 carries a line-counted text message list.
-            # The server's sender envelope varies by implementation, so
-            # preserve its fields without guessing a verified sender identity.
-            for entry in items[:100]:
-                raw=str(entry)
-                if len(raw)>MAX_LINE:
-                    continue
-                sender=self._client_field(raw,"ON")
-                message=self._client_field(raw,"MS")
-                if not message:
-                    # Older server variants return the message as plain text.
-                    message=html.unescape(raw).strip() if "<" not in raw else ""
-                if message:
-                    self.signals.text_message.emit({
-                        "sender":sender or "FRN",
-                        "message":message[:2000],
-                    })
+            # UUID, message, P is a private-message envelope on some servers.
+            import uuid
+            grouped=False
+            if len(items)==3 and str(items[2]).strip()=="P":
+                try:
+                    sender_id=str(uuid.UUID(str(items[0]).strip()))
+                except (ValueError,AttributeError):
+                    sender_id=None
+                message=html.unescape(str(items[1])).strip()
+                if sender_id and message and "<" not in message:
+                    sender=next((self._client_field(line,"ON") for line in self.client_list
+                                 if self._client_field(line,"ID").casefold()==sender_id.casefold()),"") or "FRN"
+                    self.signals.text_message.emit({"sender":sender,"sender_id":sender_id,
+                                                   "private":True,"message":message[:2000]})
+                    grouped=True
+            if not grouped:
+                for entry in items[:100]:
+                    raw=str(entry)
+                    if len(raw)>MAX_LINE: continue
+                    sender=self._client_field(raw,"ON")
+                    message=self._client_field(raw,"MS")
+                    if not message:
+                        message=html.unescape(raw).strip() if "<" not in raw else ""
+                    if message:
+                        self.signals.text_message.emit({"sender":sender or "FRN","message":message[:2000]})
         elif kind == "NET_NAMES":
             cleaned = []
             seen = set()
