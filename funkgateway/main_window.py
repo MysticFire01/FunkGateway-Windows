@@ -107,14 +107,15 @@ class UpdateWorker(QObject):
 
 
 class BannerImage(QLabel):
-    """Responsive start-page banner without cropping or stretching."""
+    """Full-width responsive banner, maintaining aspect ratio with center crop."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._original = QPixmap()
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setMinimumHeight(100)
-        self.setMaximumHeight(225)
+        # A fixed banner strip avoids the previous tiny centered thumbnail.
+        self.setFixedHeight(180)
+        self.setMinimumWidth(1)
         self.setStyleSheet(
             "QLabel { background: rgba(110,130,155,18); "
             "border: 1px solid rgba(130,150,170,85); border-radius: 10px; }"
@@ -133,12 +134,18 @@ class BannerImage(QLabel):
             self.clear()
             return
         size = self.contentsRect().size()
-        if size.width() > 0 and size.height() > 0:
-            self.setPixmap(self._original.scaled(
-                size,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            ))
+        if size.width() <= 0 or size.height() <= 0:
+            return
+        # Fill the full strip without distorting proportions; crop centrally
+        # rather than shrinking a panoramic source into a thumbnail.
+        scaled = self._original.scaled(
+            size,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        x = max(0, (scaled.width() - size.width()) // 2)
+        y = max(0, (scaled.height() - size.height()) // 2)
+        self.setPixmap(scaled.copy(x, y, size.width(), size.height()))
 
 
 class MainWindow(QMainWindow):
