@@ -4788,6 +4788,9 @@ class MainWindow(QMainWindow):
 
     def _frn_connected_changed(self, yes):
         self._refresh_frn_system_status()
+        self._configure_hotkey()
+        self._update_frn_ptt_button_style(False if not yes else None)
+        self._update_live_status()
 
     def _refresh_frn_system_status(self):
         panel=getattr(self,"frn_panel",None)
@@ -4799,9 +4802,6 @@ class MainWindow(QMainWindow):
             "FRN: verbunden" + (" · Kanal: " + room if room else "")
             if connected else "FRN: getrennt"
         )
-        self._configure_hotkey()
-        self._update_frn_ptt_button_style(False if not yes else None)
-        self._update_live_status()
 
     def _sync_zello_controls(self,*_args):
         if not hasattr(self,"zello_ptt_top_btn"):
