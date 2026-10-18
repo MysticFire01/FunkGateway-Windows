@@ -8,6 +8,7 @@ import json
 import threading
 import audioop
 import os
+import shutil
 import secrets
 import struct
 import subprocess
@@ -102,6 +103,41 @@ class UpdateWorker(QObject):
                 self.finished.emit(extract_dir, None)
         except Exception as exc:
             self.failed.emit(str(exc))
+
+
+class BannerImage(QLabel):
+    """Responsive start-page banner without cropping or stretching."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._original = QPixmap()
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumHeight(100)
+        self.setMaximumHeight(225)
+        self.setStyleSheet(
+            "QLabel { background: rgba(110,130,155,18); "
+            "border: 1px solid rgba(130,150,170,85); border-radius: 10px; }"
+        )
+
+    def set_banner(self, pixmap):
+        self._original = pixmap
+        self._update_scaled()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_scaled()
+
+    def _update_scaled(self):
+        if self._original.isNull():
+            self.clear()
+            return
+        size = self.contentsRect().size()
+        if size.width() > 0 and size.height() > 0:
+            self.setPixmap(self._original.scaled(
+                size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
 
 
 class MainWindow(QMainWindow):
@@ -340,6 +376,11 @@ class MainWindow(QMainWindow):
         )
         title.setWordWrap(True)
         v.addWidget(title)
+
+        self.start_banner = BannerImage(page)
+        self.start_banner.setAccessibleName("Eigenes FunkGateway-Startbanner")
+        self.start_banner.setVisible(False)
+        v.addWidget(self.start_banner)
 
         self.mode_note = QLabel()
         self.mode_note.setWordWrap(True)
@@ -3562,6 +3603,29 @@ class MainWindow(QMainWindow):
         f.addRow(self.mode_colors)
         v.addWidget(box)
 
+        banner_box = QGroupBox("Eigenes Startbanner")
+        banner_layout = QVBoxLayout(banner_box)
+        self.banner_enabled = QCheckBox("Eigenes Banner verwenden")
+        self.banner_enabled.setChecked(False)
+        self.banner_enabled.toggled.connect(self._banner_toggled)
+        banner_layout.addWidget(self.banner_enabled)
+        banner_row = QHBoxLayout()
+        self.banner_choose = QPushButton("Bild auswählen …")
+        self.banner_choose.clicked.connect(self._choose_banner)
+        self.banner_remove = QPushButton("Banner entfernen")
+        self.banner_remove.clicked.connect(self._remove_banner)
+        banner_row.addWidget(self.banner_choose)
+        banner_row.addWidget(self.banner_remove)
+        banner_row.addStretch(1)
+        banner_layout.addLayout(banner_row)
+        self.banner_hint = QLabel(
+            "PNG, JPG, JPEG, BMP oder WebP. Breite Bilder (z. B. 1600 × 400) "
+            "passen besonders gut. Das Banner wird ohne Verzerrung skaliert."
+        )
+        self.banner_hint.setWordWrap(True)
+        banner_layout.addWidget(self.banner_hint)
+        v.addWidget(banner_box)
+
         colors = QGroupBox("Modusfarben")
         h = QHBoxLayout(colors)
         for mode, label in (
@@ -3580,6 +3644,87 @@ class MainWindow(QMainWindow):
         v.addWidget(colors)
         v.addStretch(1)
         self._scroll_tab(page, "Darstellung")
+
+    def _banner_path(self):
+        filename = str(getattr(self, "_banner_file", "") or "").strip()
+        if not filename or os.path.basename(filename) != filename:
+            return None
+        return APP_DIR / "config" / "banners" / filename
+
+    def _refresh_banner(self):
+        path = self._banner_path()
+        valid = bool(path and path.is_file())
+        image = QPixmap(str(path)) if valid else QPixmap()
+        valid = valid and not image.isNull()
+        show = valid and self.banner_enabled.isChecked()
+        self.start_banner.setVisible(bool(show))
+        self.start_banner.set_banner(image if show else QPixmap())
+        self.banner_remove.setEnabled(bool(path and path.exists()))
+        self.banner_hint.setText(
+            "Das Banner erscheint im Reiter Start direkt unter dem Titel. "
+            "Die Bildproportionen bleiben erhalten."
+            if valid else
+            "Kein Banner gewählt. Unterstützt: PNG, JPG, JPEG, BMP und WebP."
+        )
+
+    def _banner_toggled(self, enabled):
+        self._refresh_banner()
+        if enabled and self._banner_path() is None:
+            self._choose_banner()
+        else:
+            self._save_config()
+
+    def _choose_banner(self):
+        path, _filter = QFileDialog.getOpenFileName(
+            self, "Eigenes FunkGateway-Banner auswählen", "",
+            "Bilder (*.png *.jpg *.jpeg *.bmp *.webp);;Alle Dateien (*)"
+        )
+        if not path:
+            if self._banner_path() is None:
+                self.banner_enabled.blockSignals(True)
+                self.banner_enabled.setChecked(False)
+                self.banner_enabled.blockSignals(False)
+                self._refresh_banner()
+                self._save_config()
+            return
+        image = QPixmap(path)
+        if image.isNull():
+            QMessageBox.warning(
+                self, "Banner", "Dieses Bild konnte nicht geöffnet werden."
+            )
+            return
+        folder = APP_DIR / "config" / "banners"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            ext = os.path.splitext(path)[1].lower()
+            if ext not in (".png", ".jpg", ".jpeg", ".bmp", ".webp"):
+                ext = ".png"
+            # Convert to PNG for a stable portable local copy.
+            destination = folder / "start_banner.png"
+            if not image.save(str(destination), "PNG"):
+                raise RuntimeError("PNG-Kopie konnte nicht gespeichert werden.")
+            self._banner_file = destination.name
+            self.banner_enabled.blockSignals(True)
+            self.banner_enabled.setChecked(True)
+            self.banner_enabled.blockSignals(False)
+            self._refresh_banner()
+            self._save_config()
+        except Exception as exc:
+            QMessageBox.warning(self, "Banner", str(exc))
+
+    def _remove_banner(self):
+        path = self._banner_path()
+        self.banner_enabled.blockSignals(True)
+        self.banner_enabled.setChecked(False)
+        self.banner_enabled.blockSignals(False)
+        self._banner_file = ""
+        if path and path.exists():
+            try:
+                path.unlink()
+            except Exception as exc:
+                QMessageBox.warning(self, "Banner entfernen", str(exc))
+        self._refresh_banner()
+        self._save_config()
 
     def _build_log(self):
         page = QWidget()
@@ -5522,6 +5667,11 @@ class MainWindow(QMainWindow):
             if pos >= 0:
                 self.color_scheme.setCurrentIndex(pos)
             self.mode_colors.setChecked(bool(ui.get("mode_colors", True)))
+            self._banner_file = str(ui.get("banner_file") or "").strip()
+            self.banner_enabled.blockSignals(True)
+            self.banner_enabled.setChecked(bool(ui.get("banner_enabled", False)))
+            self.banner_enabled.blockSignals(False)
+            self._refresh_banner()
             if hasattr(self, "ui_level"):
                 level = str(ui.get("ui_level", "full"))
                 idx = self.ui_level.findData(level)
@@ -5708,6 +5858,8 @@ class MainWindow(QMainWindow):
                 "scheme": self.color_scheme.currentText(),
                 "mode_colors": self.mode_colors.isChecked(),
                 "ui_level": self._ui_level_value(),
+                "banner_enabled": self.banner_enabled.isChecked(),
+                "banner_file": str(getattr(self, "_banner_file", "") or ""),
             },
             "audio": {
                 "tx_enabled": self.tx_audio_enabled.isChecked(),
