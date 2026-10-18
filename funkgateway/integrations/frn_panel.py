@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QKeySequence
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QLineEdit,QPushButton,
     QComboBox,QSpinBox,QCheckBox,QTabWidget,QTableWidget,QTableWidgetItem,QHeaderView,QPlainTextEdit,
-    QProgressBar,QAbstractItemView,QMessageBox,QGroupBox,QKeySequenceEdit)
+    QProgressBar,QAbstractItemView,QMessageBox,QGroupBox,QKeySequenceEdit,QMenu)
 from .frn_native import FrnNativeClient,FrnSystemExplorer,FrnConfig,MANAGERS,sd
 
 class HotkeyCaptureButton(QPushButton):
@@ -98,6 +98,7 @@ class FrnPanel(QWidget):
         self._sm_consecutive_errors=0
         self._sm_protect_until=0.0
         self._sm_request_kind=None
+        self._participants_with_ids=[]
         self.explorer=FrnSystemExplorer(); self.explorer.signals.result.connect(self._explorer_result); self.explorer.signals.status.connect(self._set_explorer_status); self.explorer.signals.error.connect(self._explorer_error)
         self._build(); self.refresh_audio_devices(); self._update_status()
         self._room_refresh_timer=QTimer(self); self._room_refresh_timer.setInterval(self._sm_auto_interval_ms); self._room_refresh_timer.timeout.connect(self._refresh_room_counts); self._room_refresh_timer.start()
@@ -147,7 +148,11 @@ class FrnPanel(QWidget):
         self.frn_self_mute=QPushButton('🎙 Mikro stumm'); self.frn_self_mute.setCheckable(True); self.frn_self_mute.toggled.connect(self._frn_self_mute_changed)
         self.frn_self_deaf=QPushButton('🎧 Ton aus / Deaf'); self.frn_self_deaf.setCheckable(True); self.frn_self_deaf.toggled.connect(self._frn_self_deaf_changed)
         selfrow=QHBoxLayout(); selfrow.addWidget(self.frn_self_mute); selfrow.addWidget(self.frn_self_deaf); selfrow.addStretch(1); vv.addLayout(selfrow)
-        self.participants=QTableWidget(0,6); self.participants.setHorizontalHeaderLabels(['','Name','Typ','Band','Land','Ort']); self.participants.horizontalHeader().setSectionResizeMode(1,QHeaderView.Stretch); self.participants.setEditTriggers(QAbstractItemView.NoEditTriggers); vv.addWidget(self.participants); tabs.addTab(w,'Teilnehmer')
+        self.participants=QTableWidget(0,6); self.participants.setHorizontalHeaderLabels(['','Name','Typ','Band','Land','Ort']); self.participants.horizontalHeader().setSectionResizeMode(1,QHeaderView.Stretch); self.participants.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.participants.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.participants.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.participants.customContextMenuRequested.connect(self._participant_context_menu)
+        vv.addWidget(self.participants); tabs.addTab(w,'Teilnehmer')
         # audio/PTT
         w=QWidget(); f=QFormLayout(w); self.rx_meter=QProgressBar(); self.tx_meter=QProgressBar(); self.rx_meter.setRange(0,60); self.tx_meter.setRange(0,60); self.rx_label=QLabel('RX: < -60 dBFS'); self.tx_label=QLabel('TX: < -60 dBFS'); f.addRow('FRN Empfang:',self.rx_meter); f.addRow('',self.rx_label); f.addRow('FRN Senden:',self.tx_meter); f.addRow('',self.tx_label)
         self.ptt_mode=QComboBox(); self.ptt_mode.addItem('Halten zum Senden','hold'); self.ptt_mode.addItem('Klick zum Verriegeln','latch')
@@ -267,6 +272,43 @@ class FrnPanel(QWidget):
         self.frn_self_deaf.setText('🎧 TON AUS / DEAF' if enabled else '🎧 Ton aus / Deaf')
         self.frn_self_deaf.setStyleSheet('background:#2F80ED;color:white;font-weight:bold;' if enabled else '')
 
+    def _participant_context_menu(self, pos):
+        row=self.participants.rowAt(pos.y())
+        if row<0 or row>=len(self._participants_with_ids):
+            return
+        participant=self._participants_with_ids[row]
+        name=str(participant.get("name") or "Teilnehmer").strip()
+        user_id=str(participant.get("id") or "").strip()
+        menu=QMenu(self.participants)
+        action=menu.addAction("Private Nachricht senden …")
+        enabled=bool(self.connected and self.client and user_id and
+                     self.chat_recipient.findData(user_id)>=0)
+        action.setEnabled(enabled)
+        if not enabled:
+            action.setToolTip("Für diesen Teilnehmer liefert FRN keine verwendbare Empfänger-ID.")
+        chosen=menu.exec(self.participants.viewport().mapToGlobal(pos))
+        if chosen is not action or not enabled:
+            return
+        # Recheck after selection in case the participant list was refreshed.
+        if row>=len(self._participants_with_ids):
+            return
+        current=self._participants_with_ids[row]
+        if (str(current.get("id") or "").strip()!=user_id or
+                str(current.get("name") or "").strip()!=name):
+            return
+        index=self.chat_recipient.findData(user_id)
+        if index<0:
+            return
+        self.chat_recipient.setCurrentIndex(index)
+        for tab_index in range(self.tabs.count()):
+            if self.tabs.tabText(tab_index)=="Chat":
+                self.tabs.setCurrentIndex(tab_index)
+                break
+        self.chat_status.setText(
+            f"Private Nachricht an {name} ausgewählt. Zustellung serverabhängig."
+        )
+        self.chat_input.setFocus()
+
     def _receive_chat(self, event):
         sender=str(event.get("sender") or "FRN")[:100]
         message=str(event.get("message") or "")[:2000]
@@ -337,6 +379,9 @@ class FrnPanel(QWidget):
         deliberately skips this reset because _pending_room is set in that case.
         """
         self.direct_rooms=[]
+        self._participants_with_ids=[]
+        if hasattr(self,'chat_recipient'):
+            self._update_chat_recipients([])
         self._active_room_count=None
         self.talker_name=''
         self.ptt_active=False
@@ -673,6 +718,7 @@ class FrnPanel(QWidget):
 
     def update_participants(self,parts):
         parts=list(parts or []);
+        self._participants_with_ids=[dict(part) for part in parts]
         self._update_chat_recipients(parts); self._active_room_count=len(parts); self.populate_rooms(); self.participants.setRowCount(len(parts)); red=self._radio_icon('#D32F2F'); green=self._radio_icon('#2E7D32'); orange=self._radio_icon('#F57C00')
         own=self._own_name()
         for r,p in enumerate(parts):
@@ -686,7 +732,7 @@ class FrnPanel(QWidget):
                     it.setForeground(QColor('#D32F2F')); f=it.font(); f.setBold(True); it.setFont(f)
                 self.participants.setItem(r,c,it)
     def update_talker(self,name):
-        self.talker_name=(name or '').strip(); self.talker.setText('FRN RX: '+(self.talker_name or '–')); self.talkerChanged.emit(self.talker_name); self.update_participants([{'name':self.participants.item(r,1).text() if self.participants.item(r,1) else '', 'type':self.participants.item(r,2).text() if self.participants.item(r,2) else '', 'band':self.participants.item(r,3).text() if self.participants.item(r,3) else '', 'country':self.participants.item(r,4).text() if self.participants.item(r,4) else '', 'city':self.participants.item(r,5).text() if self.participants.item(r,5) else ''} for r in range(self.participants.rowCount())])
+        self.talker_name=(name or '').strip(); self.talker.setText('FRN RX: '+(self.talker_name or '–')); self.talkerChanged.emit(self.talker_name); self.update_participants([{'name':self.participants.item(r,1).text() if self.participants.item(r,1) else '', 'type':self.participants.item(r,2).text() if self.participants.item(r,2) else '', 'band':self.participants.item(r,3).text() if self.participants.item(r,3) else '', 'country':self.participants.item(r,4).text() if self.participants.item(r,4) else '', 'city':self.participants.item(r,5).text() if self.participants.item(r,5) else '', 'id':self._participants_with_ids[r].get('id','') if r<len(self._participants_with_ids) else ''} for r in range(self.participants.rowCount())])
     def _level(self,db,meter,label,prefix): meter.setValue(max(0,min(60,int(db+60)))); label.setText(f'{prefix}: {db:.1f} dBFS' if db>=-60 else f'{prefix}: < -60 dBFS')
     def _tx_level(self,db):
         self.tx_db=float(db); self._last_tx_level_at=time.monotonic(); self._level(self.tx_db,self.tx_meter,self.tx_label,'TX'); self.levelsChanged.emit(self.rx_db,self.tx_db)
