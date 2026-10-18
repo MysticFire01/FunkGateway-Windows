@@ -289,6 +289,7 @@ class UiSignals(QObject):
     audio_level = Signal(float)
     rx_audio_level = Signal(float)
     participant_list = Signal(object)
+    text_message = Signal(object)
     server_room_list = Signal(object)
     error = Signal(str)
 
@@ -482,6 +483,23 @@ class FrnNativeClient:
             self.sock.sendall(data)
         if label:
             self.signals.log.emit("TX: " + label)
+
+    def send_text_message(self, recipient_id: str, text: str):
+        """Send FRN's documented TM envelope (server delivery unconfirmed)."""
+        if self.stop_evt.is_set() or not self.sock or self.state in (
+            "DISCONNECTED", "DYNAMIC_PASSWORD", "CONNECTING",
+            "LOGGING_IN_1", "LOGGING_IN_2"
+        ):
+            raise ConnectionError("FRN-Chat: keine angemeldete Verbindung.")
+        recipient=str(recipient_id or "").strip()
+        message=str(text or "").strip()
+        if not recipient or any(x in recipient for x in "<>\r\n") or len(recipient)>128:
+            raise ValueError("FRN-Chat: ungültige Empfänger-ID.")
+        if not message or len(message)>500 or any(x in message for x in "\r\n\x00"):
+            raise ValueError("FRN-Chat: bitte 1 bis 500 Zeichen in einer Zeile eingeben.")
+        envelope=f"TM:<ID>{html.escape(recipient)}</ID><MS>{html.escape(message)}</MS>"
+        # Do not log chat contents into the general diagnostic log.
+        self._send_line(envelope, log=False)
 
     def _send_line(self, line: str, log=True):
         self._send(
@@ -870,6 +888,24 @@ class FrnNativeClient:
             self.signals.clients.emit(len(items))
             self.signals.participant_list.emit(self._parsed_clients())
             self.signals.log.emit(f"FRN Clientliste: {len(items)} Teilnehmer.")
+        elif kind == "TEXT_MESSAGE":
+            # FRN datatype 4 carries a line-counted text message list.
+            # The server's sender envelope varies by implementation, so
+            # preserve its fields without guessing a verified sender identity.
+            for entry in items[:100]:
+                raw=str(entry)
+                if len(raw)>MAX_LINE:
+                    continue
+                sender=self._client_field(raw,"ON")
+                message=self._client_field(raw,"MS")
+                if not message:
+                    # Older server variants return the message as plain text.
+                    message=html.unescape(raw).strip() if "<" not in raw else ""
+                if message:
+                    self.signals.text_message.emit({
+                        "sender":sender or "FRN",
+                        "message":message[:2000],
+                    })
         elif kind == "NET_NAMES":
             cleaned = []
             seen = set()
@@ -945,7 +981,8 @@ class FrnNativeClient:
         for idx, line in enumerate(self.client_list, start=1):
             result.append({
                 "index": idx,
-                "name": self._client_field(line, "ON") or f"Client #{idx}",                "type": self._client_field(line, "CL"),
+                "name": self._client_field(line, "ON") or f"Client #{idx}",
+                "id": self._client_field(line, "ID"),                "type": self._client_field(line, "CL"),
                 "band": self._client_field(line, "BC"),
                 "country": self._client_field(line, "NN"),
                 "city": self._client_field(line, "CT"),
