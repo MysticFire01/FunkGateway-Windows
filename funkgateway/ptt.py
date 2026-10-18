@@ -45,6 +45,7 @@ class SerialPTT(PTTBase):
         if self.line not in ("RTS", "DTR"):
             raise ValueError("PTT-Leitung muss RTS oder DTR sein.")
         self.invert = bool(invert)
+        self.active = False
         # Safety first: opening the port always releases PTT.
         self.key(False)
 
@@ -54,6 +55,8 @@ class SerialPTT(PTTBase):
             self.ser.rts = value
         else:
             self.ser.dtr = value
+        # Requested state, not confirmation from the radio hardware.
+        self.active = bool(on)
 
     def close(self):
         try:
