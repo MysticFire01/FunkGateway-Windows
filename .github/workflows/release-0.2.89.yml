@@ -1,0 +1,238 @@
+name: Build FunkGateway Windows 0.2.89
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release-0.2.89.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Vendor pinned pymumble_py3 source
+        shell: pwsh
+        run: |
+          git clone --branch pymumble_py3 https://github.com/azlux/pymumble.git pymumble-upstream
+          Set-Location pymumble-upstream
+          git checkout 8755c7d41b8f1f91402a6218c413121b64bdce33
+          Set-Location ..
+          if (!(Test-Path "pymumble-upstream\pymumble_py3\__init__.py")) {
+            throw "pymumble_py3 package missing in pinned upstream commit"
+          }
+          Copy-Item "pymumble-upstream\pymumble_py3" "pymumble_py3" -Recurse -Force
+          Copy-Item "pymumble-upstream\LICENSE" "PYMUMBLE-LICENSE.txt" -Force
+          python -c "import pymumble_py3; print('pymumble_py3 import OK:', pymumble_py3.__file__)"
+
+      - name: Install and validate Windows libgsm WAV49
+        shell: pwsh
+        run: |
+          C:\msys64\usr\bin\bash.exe -lc "pacman -Sy --noconfirm mingw-w64-x86_64-gsm"
+          Copy-Item "C:\msys64\mingw64\bin\libgsm.dll" "libgsm.dll"
+          Copy-Item "C:\msys64\mingw64\share\licenses\gsm\license.txt" "LIBGSM-LICENSE.txt"
+          python -c "import ctypes,pathlib; p=str(pathlib.Path('libgsm.dll').resolve()); print('Testing',p); lib=ctypes.CDLL(p); lib.gsm_create.restype=ctypes.c_void_p; lib.gsm_option.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.POINTER(ctypes.c_int)]; lib.gsm_option.restype=ctypes.c_int; lib.gsm_destroy.argtypes=[ctypes.c_void_p]; h=lib.gsm_create(); assert h; one=ctypes.c_int(1); rc=lib.gsm_option(h,4,ctypes.byref(one)); lib.gsm_destroy(h); assert rc != -1, 'GSM_OPT_WAV49 unsupported'; print('libgsm WAV49 OK')"
+
+      - name: Install and validate Windows libopus
+        shell: pwsh
+        run: |
+          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm mingw-w64-x86_64-opus"
+          Copy-Item "C:\msys64\mingw64\bin\libopus-0.dll" "libopus-0.dll"
+          Copy-Item "libopus-0.dll" "opus.dll"
+          if (Test-Path "C:\msys64\mingw64\share\licenses\opus\COPYING") {
+            Copy-Item "C:\msys64\mingw64\share\licenses\opus\COPYING" "LIBOPUS-LICENSE.txt"
+          } else {
+            "Opus codec library - see https://opus-codec.org/license/" | Set-Content "LIBOPUS-LICENSE.txt"
+          }
+          $env:PATH="$PWD;C:\msys64\mingw64\bin;$env:PATH"
+          python -c "import ctypes,pathlib; p=str(pathlib.Path('opus.dll').resolve()); ctypes.WinDLL(p); print('opus.dll preload OK',p)"
+          python -c "import pymumble_py3, opuslib; print('pymumble_py3/opuslib imports OK')"
+
+      - name: Validate Python source
+        shell: pwsh
+        run: |
+          python -m compileall -q funkgateway main.py
+          python -c "from funkgateway.integrations.zello_panel import ZelloPanel; print('Zello import OK')"
+          python -c "import qrcode, PIL, qrcode.image.pil; print('QR modules OK')"
+          python -c "import pynput.keyboard, pynput.keyboard._win32; print('Windows pynput keyboard backend OK')"
+          $env:PATH="$PWD;C:\msys64\mingw64\bin;$env:PATH"
+          python -c "import pymumble_py3; import cryptography; import cryptography.hazmat.bindings._rust; import PySide6.QtNetwork; import funkgateway; import funkgateway.updates; import funkgateway.integrations.frn_native; import funkgateway.integrations.frn_panel; import funkgateway.integrations.mumble_native; import funkgateway.integrations.mumble_public; import funkgateway.dtmf; from funkgateway.ptt import DryPTT, SafetyPTT; from funkgateway.mumble_certificates import certificate_backend_status; r=certificate_backend_status(); assert r.get('ok'), r; p=SafetyPTT(DryPTT(), max_tx_s=1, min_off_ms=100); assert p.key(True) is True; p.key(False); assert p.key(True) is False; p.close(); print('Imports + QtNetwork + certificate + gateway safety self-test OK', r.get('version'))"
+
+      - name: Enable MSVC toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build TeamSpeak 3 plugin
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/teamspeak/ts3client-pluginsdk.git ts3sdk
+          New-Item -ItemType Directory -Force -Path "teamspeak-plugin-package\plugins" | Out-Null
+          cl /nologo /std:c++17 /EHsc /O2 /LD /I"ts3sdk\include" /I"teamspeak_plugin" "teamspeak_plugin\plugin.cpp" /link /OUT:"teamspeak-plugin-package\plugins\FunkGatewayAudioBridge_win64.dll" ws2_32.lib
+          Copy-Item "teamspeak_plugin\package.ini" "teamspeak-plugin-package\package.ini"
+          Compress-Archive -Path "teamspeak-plugin-package\*" -DestinationPath "FunkGateway-Audio-Bridge.zip" -Force
+          Move-Item "FunkGateway-Audio-Bridge.zip" "FunkGateway-Audio-Bridge.ts3_plugin"
+
+      - name: Build WASAPI loopback helper
+        shell: pwsh
+        run: |
+          cl /nologo /std:c++17 /EHsc /O2 "native\wasapi_loopback.cpp" /link /OUT:"FunkGateway-WASAPI-Loopback.exe" ole32.lib uuid.lib
+
+      - name: Build EXE
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onedir --windowed --hidden-import funkgateway.updates --collect-all pymumble_py3 --hidden-import opuslib --hidden-import google.protobuf --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtWebSockets --collect-all pynput --collect-all keyring --collect-all cryptography --collect-all qrcode --collect-submodules qrcode --collect-all PIL --collect-submodules PIL --hidden-import qrcode.image.pil --add-binary "libopus-0.dll;." --add-binary "opus.dll;." --name "FunkGateway-Windows" main.py
+
+      - name: Validate packaged QR backend using EXE
+        shell: pwsh
+        run: |
+          $probe = Join-Path $PWD "packaged-qr-result.json"
+          if (Test-Path $probe) { Remove-Item $probe -Force }
+          $p = Start-Process -FilePath "dist\\FunkGateway-Windows\\FunkGateway-Windows.exe" -ArgumentList "--self-test-qr", "--qr-result-file", $probe -PassThru
+          try {
+            if (!$p.WaitForExit(60000)) {
+              Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+              throw "Packaged QR self-test timed out after 60 seconds"
+            }
+            if ($p.ExitCode -ne 0) {
+              throw "Packaged QR self-test exit code: $($p.ExitCode)"
+            }
+            if (!(Test-Path $probe)) {
+              throw "QR result file missing: $probe"
+            }
+            $data = Get-Content $probe -Raw | ConvertFrom-Json
+            if (!$data.ok -or $data.qr_png_bytes -lt 100) {
+              throw "Invalid packaged QR result"
+            }
+            Write-Host "Packaged QR PNG generated:" $data.qr_png_bytes "bytes"
+          } finally {
+            if (!$p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+          }
+
+      - name: Validate packaged certificate backend
+        shell: pwsh
+        run: |
+          $output = & "dist\FunkGateway-Windows\FunkGateway-Windows.exe" --self-test-cert 2>&1 | Out-String
+          Write-Host $output
+          if ($output -notmatch '"ok"\s*:\s*true') {
+            throw "Packaged FunkGateway certificate self-test failed: ok=true missing"
+          }
+          Write-Host "Packaged certificate backend OK"
+
+      - name: Validate packaged application version
+        shell: pwsh
+        run: |
+          $probe = Join-Path $PWD "packaged-version.txt"
+          if (Test-Path $probe) { Remove-Item $probe -Force }
+          $p = Start-Process -FilePath "dist\FunkGateway-Windows\FunkGateway-Windows.exe" -ArgumentList "--version-file", $probe -PassThru -Wait
+          if ($p.ExitCode -ne 0) {
+            throw "Packaged version probe exited with code $($p.ExitCode)"
+          }
+          if (!(Test-Path $probe)) {
+            throw "Packaged version probe did not create $probe"
+          }
+          $actual = (Get-Content $probe -Raw).Trim()
+          Write-Host "Packaged FunkGateway version: $actual"
+          if ($actual -ne "0.2.89") {
+            throw "Packaged EXE version mismatch: expected 0.2.89, got $actual"
+          }
+
+      - name: Build release ZIP and checksums
+        shell: pwsh
+        run: |
+          $version = "0.2.89"
+          $stage = "FunkGateway-Windows-$version"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "dist\FunkGateway-Windows\*" "$stage" -Recurse -Force
+          Copy-Item "libgsm.dll" "$stage\libgsm.dll"
+          Copy-Item "LIBGSM-LICENSE.txt" "$stage\LIBGSM-LICENSE.txt"
+          Copy-Item "libopus-0.dll" "$stage\libopus-0.dll"
+          Copy-Item "opus.dll" "$stage\opus.dll"
+          Copy-Item "LIBOPUS-LICENSE.txt" "$stage\LIBOPUS-LICENSE.txt"
+          Copy-Item "PYMUMBLE-LICENSE.txt" "$stage\PYMUMBLE-LICENSE.txt"
+          Copy-Item "PYMUMBLE-NOTICE.md" "$stage\PYMUMBLE-NOTICE.md"
+          Copy-Item "README.md" "$stage\README.md"
+          Copy-Item "CHANGELOG.md" "$stage\CHANGELOG.md"
+          Copy-Item "LICENSE" "$stage\LICENSE"
+          New-Item -ItemType Directory -Force -Path "$stage\teamspeak-plugin\plugins" | Out-Null
+          Copy-Item "teamspeak-plugin-package\plugins\FunkGatewayAudioBridge_win64.dll" "$stage\teamspeak-plugin\plugins\FunkGatewayAudioBridge_win64.dll"
+          Copy-Item "teamspeak_plugin\README.md" "$stage\teamspeak-plugin\README.md"
+          Copy-Item "FunkGateway-Audio-Bridge.ts3_plugin" "$stage\FunkGateway-Audio-Bridge.ts3_plugin"
+          Copy-Item "FunkGateway-WASAPI-Loopback.exe" "$stage\FunkGateway-WASAPI-Loopback.exe"
+          $zip = "FunkGateway-Windows-$version-x64.zip"
+          Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
+          $exeHash = (Get-FileHash "$stage\FunkGateway-Windows.exe" -Algorithm SHA256).Hash.ToLower()
+          $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$exeHash  FunkGateway-Windows.exe" | Set-Content "FunkGateway-Windows-$version-EXE.sha256"
+          "$zipHash  $zip" | Set-Content "$zip.sha256"
+
+      - name: Prepare release notes
+        shell: pwsh
+        run: |
+          @'
+          # FunkGateway Windows 0.2.89 Preview
+          # Experimental FRN text chat: send TM, receive datatype 4.
+
+          Mumble Benutzer-Kontextmenü: Lautstärke-Popup mit gekoppeltem Schieberegler und Prozent-Eingabe, Live-Vorschau sowie Zurücksetzen.
+
+          ## Enthalten
+          - Windows 10/11 x64
+          - native FRN-Verbindung
+          - FRN-SystemManager, Server-, Raum- und Teilnehmerlisten
+          - Windows-Audiogeräte über sounddevice / PortAudio
+          - lokaler und systemweiter FRN-PTT-Hotkey
+          - eigener lokaler/systemweiter Mumble-PTT-Hotkey, getrennt von FRN
+          - Mumble-Serverfavoriten mit geschütztem Hauptserver und frei erweiterbarer Liste
+          - Hold-PTT und Latch-PTT
+          - portable Konfiguration im Unterordner config neben der EXE
+          - Logs im Unterordner logs neben der EXE
+          - keine FunkGateway-Konfiguration unter %APPDATA%
+          - Release-ZIP enthält keine config.json; sie wird nur vom Programm erzeugt
+          - config- und logs-Ordner werden beim ersten Programmstart automatisch angelegt
+          - integrierter Selbstupdater ab 0.2.89
+          - generischer audioabhängiger Funk-TX
+          - Windows-Systemaudio über nativen WASAPI-Loopback-Helfer
+          - TeamSpeak Audio Bridge Plugin ohne virtuelles Audiokabel
+          - nativer Mumble-Gateway-Client mit Audio in beide Richtungen ohne virtuelles Audiokabel
+
+          ## Wichtig zu FRN-Audio
+          FRN-Audio benötigt GSM 06.10 WAV49. Diese erste Preview sucht unter
+          Windows nach gsm.dll/libgsm.dll. Solange keine passende DLL mitgeliefert
+          wird, bitte "FRN-Audio aktiv" ausschalten. Verbindung, Server/Räume,
+          Teilnehmer und Hotkeys können trotzdem getestet werden.
+
+          Dies ist eine frühe Preview und noch kein Ersatz für die Linux-Version.
+          '@ | Set-Content RELEASE_NOTES.md
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if (gh release view "v0.2.89" 2>$null) {
+            Write-Host "Release v0.2.89 existiert bereits."
+            exit 0
+          }
+          gh release create "v0.2.89" "FunkGateway-Windows-0.2.89-x64.zip" "FunkGateway-Windows-0.2.89-x64.zip.sha256" "FunkGateway-Windows-0.2.89-EXE.sha256" "FunkGateway-Audio-Bridge.ts3_plugin" --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "FunkGateway Windows 0.2.89 Preview" --notes-file RELEASE_NOTES.md
+# retrigger after updater syntax fix
+
+# retrigger after NOMINMAX fix
