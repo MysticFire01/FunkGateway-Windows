@@ -421,11 +421,13 @@ class MainWindow(QMainWindow):
         self.status_ptt = QLabel("PTT: bereit")
         self.status_ts = QLabel("TeamSpeak: noch nicht portiert")
         self.status_mumble = QLabel("Mumble: noch nicht portiert")
+        self.status_zello = QLabel("getrennt")
         self.status_update = QLabel("Updater: aktiv")
         f.addRow("FRN:", self.status_frn)
         f.addRow("PTT:", self.status_ptt)
         f.addRow("TeamSpeak:", self.status_ts)
         f.addRow("Mumble:", self.status_mumble)
+        f.addRow("Zello:", self.status_zello)
         f.addRow("Updater:", self.status_update)
         v.addWidget(status)
         v.addStretch(1)
@@ -1261,6 +1263,7 @@ class MainWindow(QMainWindow):
         self.zello_panel.connectedChanged.connect(self._sync_zello_controls)
         self.zello_panel.pttStateChanged.connect(self._sync_zello_controls)
         self.zello_panel.talkerChanged.connect(lambda _name:self._update_live_status())
+        self.zello_panel.statusChanged.connect(lambda _status:self._update_live_status())
         self.integration_tabs.addTab(self.zello_panel,"Zello")
         self._sync_zello_controls()
 
@@ -4818,6 +4821,15 @@ class MainWindow(QMainWindow):
         ]
 
         zp=getattr(self,"zello_panel",None)
+        if hasattr(self, "status_zello"):
+            if zp and zp.connected:
+                channel=zp.channel.text().strip()
+                state="verbunden" if zp.channel_online else "verbunden · Kanalstatus wird geprüft"
+                self.status_zello.setText(
+                    state + (" · Kanal: " + channel if channel else "")
+                )
+            else:
+                self.status_zello.setText("getrennt")
         if zp and zp.connected:
             parts.append("Zello-Kanal: "+zp.channel.text().strip())
             if zp.talker_name:
