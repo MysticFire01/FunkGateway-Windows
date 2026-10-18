@@ -2912,7 +2912,7 @@ class MainWindow(QMainWindow):
             self.status_mumble.setText(
                 "Mumble: verbunden"
                 + (
-                    " · " + self._mumble_current_channel_name
+                    " · Kanal: " + self._mumble_current_channel_name
                     if self._mumble_current_channel_name else ""
                 )
             )
@@ -4787,7 +4787,18 @@ class MainWindow(QMainWindow):
             self.frn_ptt_btn.setStyleSheet("")
 
     def _frn_connected_changed(self, yes):
-        self.status_frn.setText("FRN: verbunden" if yes else "FRN: getrennt")
+        self._refresh_frn_system_status()
+
+    def _refresh_frn_system_status(self):
+        panel=getattr(self,"frn_panel",None)
+        connected=bool(panel and panel.connected)
+        client=getattr(panel,"client",None) if connected else None
+        config=getattr(client,"cfg",None)
+        room=str(getattr(config,"net","") or "").strip() if connected else ""
+        self.status_frn.setText(
+            "FRN: verbunden" + (" · Kanal: " + room if room else "")
+            if connected else "FRN: getrennt"
+        )
         self._configure_hotkey()
         self._update_frn_ptt_button_style(False if not yes else None)
         self._update_live_status()
@@ -4809,6 +4820,7 @@ class MainWindow(QMainWindow):
             "pc": "PC-User", "gateway": "Funk-Gateway",
             "radio_parrot": "Funk-Papagei", "voip_parrot": "VoIP-Papagei",
         }
+        self._refresh_frn_system_status()
         frn = "verbunden" if getattr(self.frn_panel, "connected", False) else "getrennt"
         mumble_connected = bool(getattr(self.mumble_native, "connected", False))
         mumble = "verbunden" if mumble_connected else "getrennt"
@@ -5497,7 +5509,7 @@ class MainWindow(QMainWindow):
                 (nickname or "—") + (f" · CLID {self.ts_client.clid}" if self.ts_client.clid else "")
             )
             self.ts_channel_label.setText(channel or "—")
-            self.status_ts.setText("TeamSpeak: verbunden")
+            self.status_ts.setText("TeamSpeak: verbunden" + (" · Kanal: " + channel if channel else ""))
             self.ts_enabled.setChecked(True)
             self._refresh_ts_channels()
             self._poll_teamspeak(force=True)
@@ -5620,7 +5632,7 @@ class MainWindow(QMainWindow):
             )
             self.status_ts.setText(
                 "TeamSpeak: verbunden"
-                + (f" · {channel}" if channel else "")
+                + (f" · Kanal: {channel}" if channel else "")
             )
 
             if cid and not self._ts_channel_selection_dirty:
