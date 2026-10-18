@@ -1588,7 +1588,7 @@ class MainWindow(QMainWindow):
         self.mumble_public_use_btn.clicked.connect(self._use_selected_mumble_public_server)
         self.mumble_public_tree.itemSelectionChanged.connect(self._mumble_public_selection_changed)
         self.mumble_public_tree.itemDoubleClicked.connect(
-            lambda _item, _col: self._use_selected_mumble_public_server()
+            self._connect_selected_mumble_public_server
         )
         self.mumble_tabs.addTab(mw, "Serverliste")
 
@@ -2453,6 +2453,31 @@ class MainWindow(QMainWindow):
         # Bring the operator back to the connection page.
         if hasattr(self, "mumble_tabs"):
             self.mumble_tabs.setCurrentIndex(0)
+
+    def _connect_selected_mumble_public_server(self, item, _column=0):
+        """A double-click on an actual server directly starts native Mumble."""
+        server = item.data(0, Qt.ItemDataRole.UserRole) if item is not None else None
+        if not isinstance(server, dict):
+            return  # Country group headings are not connectable.
+        host = str(server.get("host") or "").strip()
+        if not host:
+            return
+        port = int(server.get("port") or 64738)
+        changed = (
+            host.casefold() != self.mumble_server.text().strip().casefold()
+            or port != self.mumble_port.value()
+        )
+        # Do not forward a previous server's credentials or channel.
+        if changed:
+            self.mumble_native_password.clear()
+            self.mumble_channel.clear()
+        self.mumble_public_tree.setCurrentItem(item)
+        self._use_selected_mumble_public_server()
+        # Double-click means native connect, even if the native checkbox was
+        # previously off. Explicit connections still use the normal checks.
+        if not self.mumble_native_enabled.isChecked():
+            self.mumble_native_enabled.setChecked(True)
+        self._connect_mumble_native()
 
     def _retry_mumble_channels(self):
         """Wait for delayed initial channel data without losing a previous tree."""
