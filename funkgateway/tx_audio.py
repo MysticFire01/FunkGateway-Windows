@@ -45,6 +45,9 @@ class AudioTxEngine(QObject):
         self._output_device = None
         self._threshold = -40.0
         self._hang_ms = 450
+        self._hysteresis_db = 6.0
+        self._min_tx_ms = 350
+        self._tx_on_since = 0.0
         self._active = False
         self._last_hot = 0.0
         self._preroll_ms = 80
@@ -58,7 +61,7 @@ class AudioTxEngine(QObject):
     def active(self):
         return bool(self._active)
 
-    def start(self, output_device, ptt, threshold_dbfs=-40.0, hang_ms=450):
+    def start(self, output_device, ptt, threshold_dbfs=-40.0, hang_ms=450, hysteresis_db=6.0, min_tx_ms=350):
         self.stop()
         if sd is None and output_device is not None:
             raise RuntimeError("sounddevice / PortAudio ist nicht verfügbar.")
@@ -69,6 +72,9 @@ class AudioTxEngine(QObject):
         self._output_device = output_device
         self._threshold = float(threshold_dbfs)
         self._hang_ms = max(0, int(hang_ms))
+        self._hysteresis_db = max(0.0, min(20.0, float(hysteresis_db)))
+        self._min_tx_ms = max(0, min(5000, int(min_tx_ms)))
+        self._tx_on_since = 0.0
         self._active = False
         self._last_hot = 0.0
         self._stop.clear()
@@ -146,6 +152,7 @@ class AudioTxEngine(QObject):
                 self._active = False
                 return
             self._active = on
+            self._tx_on_since = time.monotonic() if on else 0.0
             self.activity.emit(on)
         except Exception as exc:
             self.error.emit("PTT: " + str(exc))
@@ -159,6 +166,7 @@ class AudioTxEngine(QObject):
             pass
         if self._active:
             self._active = False
+            self._tx_on_since = 0.0
             self.activity.emit(False)
 
     def _run(self):
@@ -193,7 +201,9 @@ class AudioTxEngine(QObject):
                     raw, in_rate, channels, source_name = self._queue.get(timeout=0.02)
                 except queue.Empty:
                     if self._active and self._last_hot:
-                        if time.monotonic() - self._last_hot >= self._hang_ms / 1000.0:
+                        now = time.monotonic()
+                        if (now - self._last_hot >= self._hang_ms / 1000.0 and
+                                now - self._tx_on_since >= self._min_tx_ms / 1000.0):
                             self._set_ptt(False)
                     continue
 
@@ -219,7 +229,8 @@ class AudioTxEngine(QObject):
                 db = self._dbfs(raw)
                 self.level.emit(db)
                 now = time.monotonic()
-                hot = db >= self._threshold
+                # Hysteresis: once keyed, remain active through softer syllables.
+                hot = db >= (self._threshold - self._hysteresis_db if self._active else self._threshold)
 
                 # Keep a short pre-roll so the first syllable is not clipped
                 # while the serial PTT line is being asserted.
@@ -244,7 +255,8 @@ class AudioTxEngine(QObject):
                 elif self._active:
                     if out is not None:
                         out.write(output_pcm)
-                    if now - self._last_hot >= self._hang_ms / 1000.0:
+                    if (now - self._last_hot >= self._hang_ms / 1000.0 and
+                            now - self._tx_on_since >= self._min_tx_ms / 1000.0):
                         self._set_ptt(False)
                 # Below threshold while idle stays only in pre-roll.
 
