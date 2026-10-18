@@ -8,6 +8,9 @@ import threading
 import queue
 import time
 import webbrowser
+import re
+from html import unescape
+from html.parser import HTMLParser
 from urllib.parse import urlencode
 from datetime import datetime, timezone
 from PySide6.QtCore import QUrl, QUrlQuery, Signal, QTimer, Qt, QEvent, QDateTime
@@ -304,7 +307,7 @@ class ZelloPanel(QWidget):
         tabs=QTabWidget(self)
         self.zello_tabs=tabs
         pages={}
-        for title in ("Verbindung","Kanäle","Public Directory","Buddys","Diagnose"):
+        for title in ("Verbindung","Kanäle","Entdecken","Public Directory","Buddys","Diagnose"):
             page=QWidget()
             layout=QVBoxLayout(page)
             layout.setContentsMargins(8,8,8,8)
@@ -327,6 +330,61 @@ class ZelloPanel(QWidget):
         channel_columns.addWidget(target_box,1)
         channel_columns.addWidget(channels_box,1)
         pages["Kanäle"].addLayout(channel_columns)
+        # External discovery is explicitly separate from the official Channel API.
+        # Only exact names published as text on the cited directory are preloaded.
+        discovery=QGroupBox("Öffentliche Kanäle entdecken (externe Verzeichnisse)")
+        discovery_layout=QVBoxLayout(discovery)
+        discovery_hint=QLabel(
+            "Keine weltweite Zello-Kanalsuche: Hier kannst du bekannte Namen "
+            "in einer kleinen öffentlichen Verzeichnis-Auswahl filtern. "
+            "Für weitere Ergebnisse öffnet sich die externe Websuche. "
+            "Eine Verbindung bestätigt erst der Zello-Server.")
+        discovery_hint.setWordWrap(True)
+        discovery_layout.addWidget(discovery_hint)
+        discover_row=QHBoxLayout()
+        self.discover_query=QLineEdit()
+        self.discover_query.setPlaceholderText("Geladene Kanäle durchsuchen, z. B. Süd, Funk")
+        self.discover_query.textChanged.connect(self._search_discovery)
+        self.discover_web=QPushButton("Online aktualisieren")
+        self.discover_web.clicked.connect(self._fetch_discovery)
+        discover_row.addWidget(self.discover_query,1)
+        discover_row.addWidget(self.discover_web)
+        discovery_layout.addLayout(discover_row)
+        self.discover_results=QListWidget()
+        self.discover_results.itemDoubleClicked.connect(self._discover_select)
+        discovery_layout.addWidget(self.discover_results)
+        discover_actions=QHBoxLayout()
+        pick_discover=QPushButton("Als Favorit speichern")
+        pick_discover.clicked.connect(self._discover_favorite)
+        switch_discover=QPushButton("Mit Kanal verbinden")
+        switch_discover.clicked.connect(self._discover_connect)
+        discover_actions.addWidget(pick_discover)
+        discover_actions.addWidget(switch_discover)
+        discovery_layout.addLayout(discover_actions)
+        self.discover_status=QLabel("80 Kanalnummern; 9 Namen mit geprüften Zusätzen, übrige aus Bildtabellen noch ungeprüft.")
+        self.discover_status.setWordWrap(True)
+        discovery_layout.addWidget(self.discover_status)
+        source_link=QPushButton("Quelle anzeigen (optional)")
+        source_link.clicked.connect(lambda:webbrowser.open(
+            "https://www.cb-digitalfunk.de/kanal%C3%BCbersicht"))
+        discovery_layout.addWidget(source_link)
+        pages["Entdecken"].addWidget(discovery)
+        # All 80 numbered entries; suffixes beyond the published HTML text
+        # require verification against the image tables before connecting.
+        suffixes={1:"Rufkanal Deutschland",2:"Ruf-Nord",3:"Ruf-West",
+                  4:"Ruf-Ost",5:"Ruf-Süd",9:"Trucker",10:"Trucker",
+                  19:"Jugend",20:"Jugend"}
+        self._discovery_entries=[
+            "Digital Funk Kanal {:02d}{}".format(
+                number, " ("+suffixes[number]+")" if number in suffixes else "")
+            for number in range(1,81)]
+        self._discovery_verified=set(suffixes)
+        self._discovery_sources={}
+        self._discovery_network=QNetworkAccessManager(self)
+        self._discovery_busy=False
+        self._discovery_replies=[]
+        self._search_discovery()
+        QTimer.singleShot(0,self._fetch_discovery)
         public_box=QGroupBox("FunkGateway Community Directory · Zello")
         public_layout=QVBoxLayout(public_box)
         info=QLabel("Öffentliche, freigegebene Community-Kanäle aus GitHub. "
@@ -851,6 +909,127 @@ class ZelloPanel(QWidget):
         window=self.window()
         if hasattr(window,"_save_config"):
             window._save_config()
+
+    @staticmethod
+    def _extract_directory_names(raw):
+        """Read only explicitly named channels; never treat search snippets as names."""
+        class TextCollector(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=True)
+                self.parts=[]
+            def handle_data(self,data):
+                self.parts.append(data)
+        parser=TextCollector()
+        parser.feed(raw)
+        text=unescape(" ".join(parser.parts))
+        text=re.sub(r"\\s+"," ",text)
+        found=re.findall(
+            r"Digital Funk Kanal\\s+(?:0[1-9]|[1-7][0-9]|80)\\s*"
+            r"\\([^)]{2,75}\\)",text,flags=re.IGNORECASE)
+        return sorted(set(n.strip() for n in found),key=str.casefold)
+
+    def _fetch_discovery(self,*_args):
+        if self._discovery_busy:
+            return
+        self._discovery_busy=True
+        self.discover_web.setEnabled(False)
+        self.discover_status.setText("Lade öffentliche Kanalverzeichnisse direkt in FunkGateway …")
+        url="https://www.cb-digitalfunk.de/kanal%C3%BCbersicht"
+        request=QNetworkRequest(QUrl(url))
+        request.setRawHeader(b"User-Agent",b"FunkGateway/0.6 ChannelDirectory")
+        request.setTransferTimeout(10000)
+        reply=self._discovery_network.get(request)
+        self._discovery_replies.append(reply)
+        reply.finished.connect(lambda reply=reply:self._finish_discovery(reply))
+
+    def _finish_discovery(self,reply):
+        self._discovery_busy=False
+        self.discover_web.setEnabled(True)
+        if reply in self._discovery_replies:
+            self._discovery_replies.remove(reply)
+        try:
+            if reply.error()!=QNetworkReply.NetworkError.NoError:
+                raise RuntimeError(reply.errorString())
+            raw=bytes(reply.readAll())
+            if len(raw)>2_000_000:
+                raise ValueError("Verzeichnisantwort zu groß")
+            names=self._extract_directory_names(raw.decode("utf-8","replace"))
+            if not names:
+                raise ValueError("Keine erkennbaren Kanalnamen in der Quelle")
+            verified={int(x.group(1)) for name in names if (x:=re.match(r"Digital Funk Kanal (\\d{2})",name))}
+            existing={int(x.group(1)):x for name in self._discovery_entries if (x:=re.match(r"Digital Funk Kanal (\\d{2})",name))}
+            for name in names:
+                match=re.match(r"Digital Funk Kanal (\\d{2})",name)
+                if match:
+                    existing[int(match.group(1))]=name
+            self._discovery_entries=[existing[k] for k in sorted(existing)]
+            self._discovery_verified.update(verified)
+            self._search_discovery()
+            self.discover_status.setText(
+                f"{len(names)} textbasierte Kanalnamen abgeglichen; 80 Nummern angezeigt. "
+                "Namen sind extern veröffentlicht, Online-Status nicht verifiziert.")
+        except Exception as exc:
+            self._search_discovery()
+            self.discover_status.setText(
+                "Verzeichnis momentan nicht erreichbar ("+str(exc)+"). "
+                "Die zuletzt geladenen Einträge bleiben sichtbar.")
+        finally:
+            reply.deleteLater()
+
+    def _search_discovery(self,*_args):
+        query=self.discover_query.text().strip().casefold()
+        self.discover_results.clear()
+        for name in self._discovery_entries:
+            if query in name.casefold():
+                self.discover_results.addItem(name)
+
+    def _discovery_name(self):
+        item=self.discover_results.currentItem()
+        if item is None:
+            return ""
+        name=item.text().strip()
+        match=re.match(r"Digital Funk Kanal (\\d{2})",name)
+        if match and int(match.group(1)) not in self._discovery_verified:
+            self.discover_status.setText(
+                "Kanal "+match.group(1)+" ist noch nicht anhand der Bildtabelle "
+                "überprüft. Bitte den vollständigen Namen mit allen Zusätzen "
+                "der Originalquelle vergleichen.")
+            return ""
+        return name
+
+    def _discover_select(self,*_args):
+        name=self._discovery_name()
+        if name:
+            self.channel_add.setText(name)
+            self.channel.setText(name)
+            self.discover_status.setText("Kanal übernommen: "+name+
+                " – Favorit speichern oder Verbindung herstellen.")
+
+    def _discover_favorite(self,*_args):
+        name=self._discovery_name()
+        if name:
+            self._channel_favorites.add(name)
+            self.channel_add.setText(name)
+            self._refresh_directories()
+            self._save_directory()
+            self.discover_status.setText("Favorit gespeichert: "+name)
+
+    def _discover_connect(self,*_args):
+        name=self._discovery_name()
+        if not name:
+            return
+        if self._tx_wanted or self._tx_pending or self._tx_stream_id is not None:
+            self.discover_status.setText("Bitte vor dem Kanalwechsel PTT loslassen.")
+            return
+        if self.connected and self.channel.text().strip()==name:
+            self.discover_status.setText("Bereits mit diesem Kanal verbunden.")
+            return
+        if self._ws.state()!=QAbstractSocket.SocketState.UnconnectedState:
+            self._pending_channel_switch=name
+            self.disconnect_channel()
+        else:
+            self.channel.setText(name)
+            self.connect_channel()
 
     def _load_public_directory(self,*_args):
         if self._public_busy:
