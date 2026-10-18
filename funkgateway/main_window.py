@@ -4725,7 +4725,7 @@ class MainWindow(QMainWindow):
             return
         values=self._ptt_diag_snapshot()
         lines=[f"{key}: {value}" for key,value in values.items()]
-        self.ptt_diag_live.setText(" | ".join(lines[:5])+"\\n"+
+        self.ptt_diag_live.setText(" | ".join(lines[:5])+"\n"+
             " | ".join(lines[5:]))
         marker=tuple(values.items())
         if marker!=self._ptt_diag_previous:
@@ -4739,11 +4739,11 @@ class MainWindow(QMainWindow):
         self._ptt_diag_tick()
         import platform
         report=(
-            "FunkGateway PTT-Diagnose\\n"
-            f"Version: {VERSION}\\n"
-            f"System: {platform.platform()}\\n"
-            "RTS/DTR = Software-Sollpegel, kein elektrischer Messwert.\\n"
-            "Schaltungstyp, Invertierung und echter TX-Status sind nicht automatisch erkennbar.\\n\\n"
+            "FunkGateway PTT-Diagnose\n"
+            f"Version: {VERSION}\n"
+            f"System: {platform.platform()}\n"
+            "RTS/DTR = Software-Sollpegel, kein elektrischer Messwert.\n"
+            "Schaltungstyp, Invertierung und echter TX-Status sind nicht automatisch erkennbar.\n\n"
             +self.ptt_diag_log.toPlainText()
         )
         QApplication.clipboard().setText(report)
