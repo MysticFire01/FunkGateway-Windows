@@ -152,7 +152,14 @@ class FrnPanel(QWidget):
         self.participants.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.participants.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.participants.customContextMenuRequested.connect(self._participant_context_menu)
-        vv.addWidget(self.participants); tabs.addTab(w,'Teilnehmer')
+        vv.addWidget(self.participants)
+        self.frn_chat_id_status=QLabel(
+            "Chat-IDs: noch keine Teilnehmerliste empfangen. "
+            "Rechtsklick auf Teilnehmer zeigt die verfügbare Chat-Funktion."
+        )
+        self.frn_chat_id_status.setWordWrap(True)
+        vv.addWidget(self.frn_chat_id_status)
+        tabs.addTab(w,'Teilnehmer')
         # audio/PTT
         w=QWidget(); f=QFormLayout(w); self.rx_meter=QProgressBar(); self.tx_meter=QProgressBar(); self.rx_meter.setRange(0,60); self.tx_meter.setRange(0,60); self.rx_label=QLabel('RX: < -60 dBFS'); self.tx_label=QLabel('TX: < -60 dBFS'); f.addRow('FRN Empfang:',self.rx_meter); f.addRow('',self.rx_label); f.addRow('FRN Senden:',self.tx_meter); f.addRow('',self.tx_label)
         self.ptt_mode=QComboBox(); self.ptt_mode.addItem('Halten zum Senden','hold'); self.ptt_mode.addItem('Klick zum Verriegeln','latch')
@@ -285,7 +292,15 @@ class FrnPanel(QWidget):
                      self.chat_recipient.findData(user_id)>=0)
         action.setEnabled(enabled)
         if not enabled:
-            action.setToolTip("Für diesen Teilnehmer liefert FRN keine verwendbare Empfänger-ID.")
+            if not self.connected:
+                reason="Keine FRN-Verbindung."
+            elif not user_id:
+                reason="Keine Chat-ID übermittelt – private Nachrichten derzeit nicht möglich."
+            else:
+                reason="Chat-ID nicht als Empfänger verfügbar."
+            action.setToolTip(reason)
+            explanation=menu.addAction("Hinweis: "+reason)
+            explanation.setEnabled(False)
         chosen=menu.exec(self.participants.viewport().mapToGlobal(pos))
         if chosen is not action or not enabled:
             return
@@ -380,6 +395,8 @@ class FrnPanel(QWidget):
         """
         self.direct_rooms=[]
         self._participants_with_ids=[]
+        if hasattr(self,'frn_chat_id_status'):
+            self.frn_chat_id_status.setText("Chat-IDs: getrennt – keine Teilnehmerliste vorhanden.")
         if hasattr(self,'chat_recipient'):
             self._update_chat_recipients([])
         self._active_room_count=None
@@ -719,6 +736,22 @@ class FrnPanel(QWidget):
     def update_participants(self,parts):
         parts=list(parts or []);
         self._participants_with_ids=[dict(part) for part in parts]
+        valid_ids=sum(
+            1 for part in parts
+            if str(part.get('id') or '').strip()
+            and len(str(part.get('id') or '').strip())<=128
+        )
+        if hasattr(self,'frn_chat_id_status'):
+            total=len(parts)
+            if not total:
+                text="Chat-IDs: keine Teilnehmer gemeldet."
+            elif valid_ids==0:
+                text=(f"Chat-IDs: 0 von {total} Teilnehmern – Server liefert keine "
+                      "verwendbaren privaten Empfänger-IDs. Rechtsklick erklärt die Sperre.")
+            else:
+                text=(f"Chat-IDs: {valid_ids} von {total} Teilnehmern verfügbar. "
+                      "Private Nachricht per Rechtsklick bei Teilnehmern mit ID.")
+            self.frn_chat_id_status.setText(text)
         self._update_chat_recipients(parts); self._active_room_count=len(parts); self.populate_rooms(); self.participants.setRowCount(len(parts)); red=self._radio_icon('#D32F2F'); green=self._radio_icon('#2E7D32'); orange=self._radio_icon('#F57C00')
         own=self._own_name()
         for r,p in enumerate(parts):
