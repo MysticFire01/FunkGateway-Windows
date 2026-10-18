@@ -486,9 +486,10 @@ class FrnNativeClient:
 
     def send_text_message(self, recipient_id: str, text: str):
         """Send FRN's documented TM envelope (server delivery unconfirmed)."""
-        if self.stop_evt.is_set() or not self.sock or self.state in (
-            "DISCONNECTED", "DYNAMIC_PASSWORD", "CONNECTING",
-            "LOGGING_IN_1", "LOGGING_IN_2"
+        if self.stop_evt.is_set() or not self.sock or self.state not in (
+            "IDLE", "RX_AUDIO", "RX_LIST", "RX_CLIENT_LIST",
+            "RX_EXTENSION_11", "RX_EXTENSION_11_PADDING",
+            "TX_AUDIO", "TX_WAITING", "WAIT_TX_INDEX",
         ):
             raise ConnectionError("FRN-Chat: keine angemeldete Verbindung.")
         recipient=str(recipient_id or "").strip()
