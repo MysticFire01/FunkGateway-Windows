@@ -4140,6 +4140,46 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self.tx_audio_output.setCurrentIndex(idx)
 
+    def _wasapi_tx_feedback_risk(self):
+        """Best-effort match of radio TX output to Windows default WASAPI render.
+
+        The native helper captures eRender/eConsole. PortAudio device numbering
+        and Windows endpoint IDs differ; compare exact selected WASAPI index
+        and normalized physical names across host APIs without claiming certainty.
+        """
+        try:
+            import sounddevice as sd
+            import re
+            output_index=self.tx_audio_output.currentData()
+            if output_index is None:
+                return False, "Kein Funk-TX-Audioausgang ausgewählt."
+            outputs=sd.query_devices()
+            hostapis=sd.query_hostapis()
+            wasapi_indices=[
+                i for i,h in enumerate(hostapis)
+                if "WASAPI" in str(h.get("name","")).upper()
+            ]
+            if not wasapi_indices:
+                return False, "WASAPI-Standardgerät kann nicht verglichen werden."
+            def normalized(name):
+                return re.sub(r"\\s+", " ",str(name).strip().casefold())
+            selected=outputs[int(output_index)]
+            selected_name=normalized(selected["name"])
+            for host_index in wasapi_indices:
+                default_index=hostapis[host_index].get("default_output_device",-1)
+                if default_index is None or int(default_index)<0:
+                    continue
+                if int(output_index)==int(default_index):
+                    return True, "Funk-TX verwendet den WASAPI-Standardausgang."
+                default_name=normalized(outputs[int(default_index)]["name"])
+                # Same physical device across PortAudio host APIs may have
+                # different indices; only a full normalized name is a match.
+                if selected_name and default_name and selected_name==default_name:
+                    return True, "Funk-TX und WASAPI-Standardgerät haben denselben Gerätenamen."
+            return False, "Kein identischer WASAPI-Standardausgang erkannt (Best-Effort)."
+        except Exception as exc:
+            return False, "WASAPI-Gerätevergleich nicht möglich: "+str(exc)
+
     def _start_tx_audio(self):
         if not hasattr(self, "tx_audio_enabled") or not self.tx_audio_enabled.isChecked():
             return
@@ -4154,6 +4194,22 @@ class MainWindow(QMainWindow):
         if source_mode == "input" and source_device is None:
             self.tx_audio_status_label.setText("TX-Audiokern: keine Audioquelle")
             return
+
+        if source_mode == "wasapi_system":
+            risk, detail = self._wasapi_tx_feedback_risk()
+            if risk:
+                message=(
+                    "WASAPI-Rückkopplungsschutz: "+detail+
+                    " Die eigene FunkGateway-Ausgabe würde wieder aufgenommen. "
+                    "Wähle für Funk-TX einen ANDEREN Audioausgang (USB-Soundkarte), "
+                    "und verwende die interne Soundkarte als Windows-/TeamSpeak-Ausgang."
+                )
+                self.tx_audio_status_label.setText(message)
+                if hasattr(self,"ui_log"):
+                    self.ui_log.appendPlainText("TX-Audio: "+message)
+                return
+            if hasattr(self,"ui_log"):
+                self.ui_log.appendPlainText("WASAPI-Ausgangsprüfung: "+detail)
 
         try:
             self.tx_audio_engine.start(
