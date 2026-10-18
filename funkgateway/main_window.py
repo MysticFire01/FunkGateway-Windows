@@ -4162,7 +4162,7 @@ class MainWindow(QMainWindow):
             if not wasapi_indices:
                 return False, "WASAPI-Standardgerät kann nicht verglichen werden."
             def normalized(name):
-                return re.sub(r"\\s+", " ",str(name).strip().casefold())
+                return re.sub(r"\s+", " ",str(name).strip().casefold())
             selected=outputs[int(output_index)]
             selected_name=normalized(selected["name"])
             for host_index in wasapi_indices:
