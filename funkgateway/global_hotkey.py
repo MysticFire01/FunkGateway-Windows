@@ -46,6 +46,10 @@ class GlobalPttHotkey(QObject):
 
         try:
             from pynput import keyboard
+            # Import the Windows backend explicitly so a missing PyInstaller
+            # module gives an actionable error instead of silent PTT failure.
+            if os.name == "nt":
+                import pynput.keyboard._win32  # noqa: F401
         except Exception as exc:
             self.statusChanged.emit(
                 f"Systemweiter Hotkey nicht verfügbar: Python-Modul pynput fehlt oder startet nicht ({exc}). "
@@ -83,6 +87,11 @@ class GlobalPttHotkey(QObject):
     def stop(self):
         listener = self._listener
         self._listener = None
+        was_active = self._active
+        self._active = False
+        self._pressed.clear()
+        if was_active:
+            self.released.emit()
         if listener is not None:
             try:
                 listener.stop()
