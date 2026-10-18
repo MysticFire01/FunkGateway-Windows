@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QLabe
     QComboBox,QSpinBox,QCheckBox,QTabWidget,QTableWidget,QTableWidgetItem,QHeaderView,QPlainTextEdit,
     QProgressBar,QAbstractItemView,QMessageBox,QGroupBox,QKeySequenceEdit,QMenu)
 from .frn_native import FrnNativeClient,FrnSystemExplorer,FrnConfig,MANAGERS,sd
+from .chat_widgets import PrivateChatDialog, emoji_button
 
 class HotkeyCaptureButton(QPushButton):
     hotkeyChanged=Signal(str)
@@ -99,6 +100,7 @@ class FrnPanel(QWidget):
         self._sm_protect_until=0.0
         self._sm_request_kind=None
         self._participants_with_ids=[]
+        self._private_chats={}
         self.explorer=FrnSystemExplorer(); self.explorer.signals.result.connect(self._explorer_result); self.explorer.signals.status.connect(self._set_explorer_status); self.explorer.signals.error.connect(self._explorer_error)
         self._build(); self.refresh_audio_devices(); self._update_status()
         self._room_refresh_timer=QTimer(self); self._room_refresh_timer.setInterval(self._sm_auto_interval_ms); self._room_refresh_timer.timeout.connect(self._refresh_room_counts); self._room_refresh_timer.start()
@@ -200,6 +202,7 @@ class FrnPanel(QWidget):
         self.chat_send.clicked.connect(self._send_chat)
         self.chat_send.setEnabled(False)
         message_row.addWidget(self.chat_input,1)
+        message_row.addWidget(emoji_button(self.chat_input,'frn',self))
         message_row.addWidget(self.chat_send)
         chat_layout.addLayout(message_row)
         self.chat_status=QLabel("Verbinde dich mit einem FRN-Raum, um zu chatten.")
@@ -311,26 +314,31 @@ class FrnPanel(QWidget):
         if (str(current.get("id") or "").strip()!=user_id or
                 str(current.get("name") or "").strip()!=name):
             return
-        index=self.chat_recipient.findData(user_id)
-        if index<0:
-            return
-        self.chat_recipient.setCurrentIndex(index)
-        for tab_index in range(self.tabs.count()):
-            if self.tabs.tabText(tab_index)=="Chat":
-                self.tabs.setCurrentIndex(tab_index)
-                break
-        self.chat_status.setText(
-            f"Private Nachricht an {name} ausgewählt. Zustellung serverabhängig."
-        )
-        self.chat_input.setFocus()
+        self._open_private_chat(user_id,name)
+
+    def _send_private(self,user_id,message):
+        if not self.connected or not self.client:
+            raise ConnectionError("FRN getrennt.")
+        self.client.send_text_message(user_id,message)
+
+    def _open_private_chat(self,user_id,name):
+        chat=self._private_chats.get(user_id)
+        if chat is None:
+            chat=PrivateChatDialog(user_id,name,self._send_private,"frn",self)
+            self._private_chats[user_id]=chat
+            chat.finished.connect(lambda _result,uid=user_id:self._private_chats.pop(uid,None))
+        chat.show(); chat.raise_(); chat.activateWindow()
+        return chat
 
     def _receive_chat(self, event):
         sender=str(event.get("sender") or "FRN")[:100]
         message=str(event.get("message") or "")[:2000]
         if message:
-            self.chat_history.appendPlainText(
-                f"[{time.strftime('%H:%M:%S')}] {sender}: {message}"
-            )
+            sender_id=str(event.get("sender_id") or "").strip()
+            if event.get("private") and sender_id:
+                self._open_private_chat(sender_id,sender).append_message(sender,message)
+            else:
+                self.chat_history.appendPlainText(f"[{time.strftime('%H:%M:%S')}] {sender}: {message}")
 
     def _send_chat(self):
         if not self.connected or not self.client:
@@ -355,17 +363,21 @@ class FrnPanel(QWidget):
         self.chat_status.setText("An Server gesendet; Zustellung nicht bestätigt.")
 
     def _update_chat_recipients(self, parts):
+        choices=[("Alle im Raum (Test, ID 0)","0")]
+        choices.extend((str(item.get("name") or "Teilnehmer")[:100],str(item["id"]).strip())
+                       for item in parts if 0<len(str(item.get("id") or "").strip())<=128)
+        current=[(self.chat_recipient.itemText(i),self.chat_recipient.itemData(i))
+                 for i in range(self.chat_recipient.count())]
+        if current==choices:
+            return
         selected=self.chat_recipient.currentData()
+        self.chat_recipient.blockSignals(True)
         self.chat_recipient.clear()
-        self.chat_recipient.addItem("Alle im Raum (Test, ID 0)","0")
-        for item in parts:
-            user_id=str(item.get("id") or "").strip()
-            if user_id and len(user_id)<=128:
-                self.chat_recipient.addItem(
-                    str(item.get("name") or "Teilnehmer")[:100],user_id
-                )
-        pos=self.chat_recipient.findData(selected)
-        self.chat_recipient.setCurrentIndex(max(0,pos))
+        for label,uid in choices:
+            self.chat_recipient.addItem(label,uid)
+        index=self.chat_recipient.findData(selected)
+        self.chat_recipient.setCurrentIndex(index if index>=0 else 0)
+        self.chat_recipient.blockSignals(False)
 
     def connect_frn(self):
         try: cfg=self._cfg()
