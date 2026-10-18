@@ -8,3 +8,5 @@ opuslib==3.0.1
 protobuf==3.20.3
 cryptography==43.0.3
 qrcode[pil]>=7.4,<9
+
+keyring>=24,<27
