@@ -927,6 +927,43 @@ class MainWindow(QMainWindow):
         hf.addRow("", test)
         v.addWidget(hw)
 
+        diag=QGroupBox("PTT-Diagnose (RTS/DTR)")
+        df=QVBoxLayout(diag)
+        self.ptt_diag_live=QLabel("Noch kein PTT-Zustand erfasst.")
+        self.ptt_diag_live.setWordWrap(True)
+        df.addWidget(self.ptt_diag_live)
+        self.ptt_diag_log=QPlainTextEdit()
+        self.ptt_diag_log.setReadOnly(True)
+        self.ptt_diag_log.setMinimumHeight(130)
+        self.ptt_diag_log.document().setMaximumBlockCount(250)
+        df.addWidget(self.ptt_diag_log)
+        buttons=QHBoxLayout()
+        refresh_diag=QPushButton("Status erfassen")
+        refresh_diag.clicked.connect(self._ptt_diag_tick)
+        copy_diag=QPushButton("Diagnosebericht kopieren")
+        copy_diag.clicked.connect(self._copy_ptt_diagnostic)
+        buttons.addWidget(refresh_diag)
+        buttons.addWidget(copy_diag)
+        buttons.addStretch(1)
+        df.addLayout(buttons)
+        diag_hint=QLabel(
+            "Ausgelesen werden COM-Gerätedaten und die von der Software gesetzten "
+            "RTS/DTR-Pegel. Ohne zusätzliche Messhardware kann FunkGateway NICHT "
+            "erkennen, ob ein Eigenbau RTS oder DTR benötigt, ob die PTT invertiert "
+            "ist oder ob das Funkgerät tatsächlich sendet. Zum Testen HF-Sendung "
+            "sicher verhindern und den bestehenden PTT-Haltetaster verwenden. "
+            "Der Bericht enthält keine Zugangsdaten."
+        )
+        diag_hint.setWordWrap(True)
+        df.addWidget(diag_hint)
+        v.addWidget(diag)
+        self._ptt_diag_previous=None
+        self._ptt_diag_timer=QTimer(self)
+        self._ptt_diag_timer.setInterval(500)
+        self._ptt_diag_timer.timeout.connect(self._ptt_diag_tick)
+        self._ptt_diag_timer.start()
+        self._ptt_diag_tick()
+
         frn = QGroupBox("FRN PTT")
         ff = QFormLayout(frn)
         ff.addRow("Status:", QLabel("Lokaler/systemweiter Hotkey, Hold/Latch und TX-Zeitlimit bleiben aktiv."))
@@ -4638,6 +4675,81 @@ class MainWindow(QMainWindow):
             self._set_ts_commander_state(False, "Gateway gestoppt")
         if not silent:
             self._update_live_status()
+
+    def _ptt_diag_snapshot(self):
+        port_data=self.gateway_ptt_port.currentData()
+        port=(getattr(self,"_manual_gateway_ptt_port","")
+              if port_data=="__manual_value__"
+              else str(port_data or ""))
+        if port.startswith("__"):
+            port=""
+        details={
+            "Gateway": "gestartet" if self.gateway_started else "gestoppt",
+            "PTT-Backend": str(self.gateway_ptt_backend.currentData()),
+            "COM-Port": port or "(kein Port)",
+            "Ausgewählte Leitung": self.gateway_ptt_line.currentText(),
+            "Invertierung": "EIN" if self.gateway_ptt_invert.isChecked() else "AUS",
+        }
+        ptt=self.gateway_ptt
+        raw=getattr(ptt,"backend",ptt)
+        if raw is not None and hasattr(raw,"ser"):
+            try:
+                details["Serieller Port offen"]="JA" if raw.ser.is_open else "NEIN"
+                details["RTS Sollpegel"]="EIN" if raw.ser.rts else "AUS"
+                details["DTR Sollpegel"]="EIN" if raw.ser.dtr else "AUS"
+                details["PTT Softwareanforderung"]=(
+                    "EIN" if getattr(ptt,"active",getattr(raw,"active",False)) else
+                    "AUS/keine aktive Anforderung erfasst"
+                )
+            except Exception as exc:
+                details["Abfragefehler"]=str(exc)
+        else:
+            details["Serieller Port offen"]="NEIN / Test-PTT"
+            details["RTS Sollpegel"]="nicht auslesbar"
+            details["DTR Sollpegel"]="nicht auslesbar"
+        try:
+            from serial.tools import list_ports
+            entry=next((p for p in list_ports.comports() if p.device==port),None)
+            if entry is not None:
+                details["Adapter"]=str(entry.description or "unbekannt")
+                details["USB VID:PID"]=(
+                    f"{entry.vid:04X}:{entry.pid:04X}"
+                    if entry.vid is not None and entry.pid is not None else "unbekannt"
+                )
+        except Exception:
+            pass
+        return details
+
+    def _ptt_diag_tick(self):
+        if not hasattr(self,"ptt_diag_live"):
+            return
+        values=self._ptt_diag_snapshot()
+        lines=[f"{key}: {value}" for key,value in values.items()]
+        self.ptt_diag_live.setText(" | ".join(lines[:5])+"\\n"+
+            " | ".join(lines[5:]))
+        marker=tuple(values.items())
+        if marker!=self._ptt_diag_previous:
+            self._ptt_diag_previous=marker
+            self.ptt_diag_log.appendPlainText(
+                time.strftime("%H:%M:%S")+"  "+
+                " · ".join(lines)
+            )
+
+    def _copy_ptt_diagnostic(self):
+        self._ptt_diag_tick()
+        import platform
+        report=(
+            "FunkGateway PTT-Diagnose\\n"
+            f"Version: {VERSION}\\n"
+            f"System: {platform.platform()}\\n"
+            "RTS/DTR = Software-Sollpegel, kein elektrischer Messwert.\\n"
+            "Schaltungstyp, Invertierung und echter TX-Status sind nicht automatisch erkennbar.\\n\\n"
+            +self.ptt_diag_log.toPlainText()
+        )
+        QApplication.clipboard().setText(report)
+        self.ptt_diag_log.appendPlainText(
+            time.strftime("%H:%M:%S")+"  Diagnosebericht in Zwischenablage kopiert."
+        )
 
     def _gateway_ptt_press(self):
         if not self.gateway_started or self.gateway_ptt is None:
