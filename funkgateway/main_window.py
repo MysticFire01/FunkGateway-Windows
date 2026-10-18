@@ -31,6 +31,7 @@ import funkgateway.updates as updates
 from .global_hotkey import GlobalPttHotkey
 from .hotkeys import LocalPttHotkey, ModifierHoldWatcher
 from .integrations.frn_panel import FrnPanel, HotkeyCaptureButton
+from .integrations.zello_panel import ZelloPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
 from .ptt import DryPTT, SerialPTT, SafetyPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
@@ -309,6 +310,9 @@ class MainWindow(QMainWindow):
         self.emergency_main_btn = self._big("NOT-AUS / PTT AUS")
         self.ident_main_btn = self._big("Rufzeichen jetzt senden")
         self.frn_ptt_btn = self._big("FRN PTT")
+        self.zello_ptt_top_btn = self._big("Zello PTT")
+        self.zello_ptt_top_btn.setVisible(False)
+        self.zello_ptt_top_btn.setEnabled(False)
         self.mumble_ptt_top_btn = self._big("Mumble PTT")
         self.mumble_ptt_top_btn.setVisible(False)
         self.mumble_ptt_top_btn.setEnabled(False)
@@ -326,10 +330,13 @@ class MainWindow(QMainWindow):
         self.frn_ptt_btn.released.connect(self._main_ptt_released)
         self.mumble_ptt_top_btn.pressed.connect(self._mumble_pc_ptt_press)
         self.mumble_ptt_top_btn.released.connect(self._mumble_pc_ptt_release)
+        self.zello_ptt_top_btn.pressed.connect(lambda: self.zello_panel.set_ptt(True))
+        self.zello_ptt_top_btn.released.connect(lambda: self.zello_panel.set_ptt(False))
 
         for button in (
             self.start_main_btn, self.stop_main_btn, self.emergency_main_btn,
-            self.ident_main_btn, self.frn_ptt_btn, self.mumble_ptt_top_btn
+            self.ident_main_btn, self.frn_ptt_btn, self.mumble_ptt_top_btn,
+            self.zello_ptt_top_btn
         ):
             row.addWidget(button)
 
@@ -1243,6 +1250,12 @@ class MainWindow(QMainWindow):
         self.frn_panel.pttStateChanged.connect(self._frn_ptt_state_changed)
         self.frn_panel.pttHotkeyChanged.connect(self._configure_hotkey)
         self.integration_tabs.addTab(self.frn_panel, "FRN")
+        self.zello_panel=ZelloPanel(self)
+        self.zello_panel.connectedChanged.connect(self._sync_zello_controls)
+        self.zello_panel.pttStateChanged.connect(self._sync_zello_controls)
+        self.zello_panel.talkerChanged.connect(lambda _name:self._update_live_status())
+        self.integration_tabs.addTab(self.zello_panel,"Zello")
+        self._sync_zello_controls()
 
         ts = QWidget()
         tf = QFormLayout(ts)
@@ -4769,6 +4782,18 @@ class MainWindow(QMainWindow):
         self._update_frn_ptt_button_style(False if not yes else None)
         self._update_live_status()
 
+    def _sync_zello_controls(self,*_args):
+        if not hasattr(self,"zello_ptt_top_btn"):
+            return
+        zp=getattr(self,"zello_panel",None)
+        pc=self._mode()=="pc"
+        active=bool(zp and (zp._tx_wanted or zp._tx_stream_id is not None))
+        self.zello_ptt_top_btn.setVisible(pc)
+        self.zello_ptt_top_btn.setEnabled(bool(pc and zp and zp.connected and zp.channel_online))
+        self.zello_ptt_top_btn.setText("Zello TX AKTIV" if active else "Zello PTT")
+        self.zello_ptt_top_btn.setStyleSheet("background:#E58B22;color:black;font-weight:bold;" if active else "")
+        self._update_live_status()
+
     def _update_live_status(self):
         mode_names = {
             "pc": "PC-User", "gateway": "Funk-Gateway",
@@ -4782,8 +4807,16 @@ class MainWindow(QMainWindow):
             mode_names.get(self._mode(), "PC-User"),
             f"FRN {frn}",
             f"Mumble {mumble}",
+            ("Zello verbunden" if getattr(getattr(self,"zello_panel",None),"connected",False) else "Zello getrennt"),
         ]
 
+        zp=getattr(self,"zello_panel",None)
+        if zp and zp.connected:
+            parts.append("Zello-Kanal: "+zp.channel.text().strip())
+            if zp.talker_name:
+                parts.append("Zello RX: "+zp.talker_name)
+            if zp._tx_wanted:
+                parts.append("Zello TX")
         if mumble_connected and self._mumble_current_channel_name:
             parts.append(f"Mumble-Channel: {self._mumble_current_channel_name}")
         if mumble_connected and self._mumble_current_speakers:
@@ -5680,6 +5713,7 @@ class MainWindow(QMainWindow):
         try:
             data = json.loads(CFG_FILE.read_text(encoding="utf-8"))
             self.frn_panel.load_config(data.get("frn", {}))
+            self.zello_panel.load_config(data.get("zello", {}))
             ui = data.get("ui", {})
             mode = ui.get("mode", "pc")
             pos = self.operating_mode.findData(mode)
@@ -5877,6 +5911,7 @@ class MainWindow(QMainWindow):
         data = {
             "version": VERSION,
             "frn": self.frn_panel.to_config(),
+            "zello": self.zello_panel.to_config(),
             "ui": {
                 "mode": self._mode(),
                 "theme": self.theme_mode.currentText(),
@@ -6005,6 +6040,11 @@ class MainWindow(QMainWindow):
             pass
         try:
             self.frn_panel.disconnect_frn()
+        except Exception:
+            pass
+        try:
+            self.zello_panel.stop_ptt_hotkeys()
+            self.zello_panel.disconnect_channel()
         except Exception:
             pass
         try:
