@@ -4032,6 +4032,7 @@ class MainWindow(QMainWindow):
         )
 
     def _banner_toggled(self, enabled):
+        self._banner_explicitly_disabled = not bool(enabled)
         self._refresh_banner()
         if enabled and self._banner_path() is None:
             self._choose_banner()
@@ -4082,6 +4083,7 @@ class MainWindow(QMainWindow):
         self.banner_enabled.setChecked(False)
         self.banner_enabled.blockSignals(False)
         self._banner_file = ""
+        self._banner_explicitly_disabled = True
         if path and path.exists():
             try:
                 path.unlink()
@@ -6304,7 +6306,7 @@ class MainWindow(QMainWindow):
                 self.color_scheme.setCurrentIndex(pos)
             self.mode_colors.setChecked(bool(ui.get("mode_colors", True)))
             self._banner_file = str(ui.get("banner_file") or "").strip()
-            self._banner_explicitly_disabled = bool(ui.get("banner_file") and not ui.get("banner_enabled", False))
+            self._banner_explicitly_disabled = bool(ui.get("banner_disabled_explicitly", False) or (ui.get("banner_file") and not ui.get("banner_enabled", False)))
             self.banner_enabled.blockSignals(True)
             self.banner_enabled.setChecked(bool(ui.get("banner_enabled", False)))
             self.banner_enabled.blockSignals(False)
@@ -6504,6 +6506,7 @@ class MainWindow(QMainWindow):
                 "ui_level": self._ui_level_value(),
                 "banner_enabled": self.banner_enabled.isChecked(),
                 "banner_file": str(getattr(self, "_banner_file", "") or ""),
+                "banner_disabled_explicitly": bool(getattr(self, "_banner_explicitly_disabled", False)),
             },
             "audio": {
                 "tx_enabled": self.tx_audio_enabled.isChecked(),
