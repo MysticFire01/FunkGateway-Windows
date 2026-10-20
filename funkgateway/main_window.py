@@ -4982,6 +4982,16 @@ class MainWindow(QMainWindow):
 
     def _stop_gateway_ptt(self, silent=False):
         self._parrot_reset()
+        # An unattended safety stop must also terminate native VoIP forwarding.
+        # Disabling serial PTT alone would leave an RF -> Mumble audio path open.
+        try:
+            self.ts_plugin_bridge.set_active(False)
+        except Exception:
+            pass
+        try:
+            self.mumble_native.set_radio_to_mumble(False)
+        except Exception:
+            pass
         self.return_guard.clear()
         self._tx_was_active_for_return_guard = False
         # Stop audio sources first. They own the automatic PTT activity and
