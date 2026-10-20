@@ -6306,7 +6306,7 @@ class MainWindow(QMainWindow):
                 self.color_scheme.setCurrentIndex(pos)
             self.mode_colors.setChecked(bool(ui.get("mode_colors", True)))
             self._banner_file = str(ui.get("banner_file") or "").strip()
-            self._banner_explicitly_disabled = bool(ui.get("banner_disabled_explicitly", False) or (ui.get("banner_file") and not ui.get("banner_enabled", False)))
+            self._banner_explicitly_disabled = bool(ui.get("banner_disabled_explicitly", False) or ("banner_enabled" in ui and not ui["banner_enabled"]))
             self.banner_enabled.blockSignals(True)
             self.banner_enabled.setChecked(bool(ui.get("banner_enabled", False)))
             self.banner_enabled.blockSignals(False)
