@@ -32,6 +32,7 @@ from .global_hotkey import GlobalPttHotkey
 from .hotkeys import LocalPttHotkey, ModifierHoldWatcher
 from .integrations.frn_panel import FrnPanel, HotkeyCaptureButton
 from .integrations.chat_widgets import PrivateChatDialog, emoji_button
+from .integrations.mumble_channel_editor import ChannelEditor
 from .integrations.zello_panel import ZelloPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
 from .ptt import DryPTT, SerialPTT, SafetyPTT, serial_ports
@@ -3196,15 +3197,50 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Mumble", str(exc))
 
     def _mumble_channel_context_menu(self, pos):
-        item = self.mumble_channel_tree.itemAt(pos)
+        item=self.mumble_channel_tree.itemAt(pos)
         if item is None:
             return
-        data = item.data(0, Qt.ItemDataRole.UserRole)
-        if not isinstance(data, dict) or data.get("kind") != "user":
+        data=item.data(0,Qt.ItemDataRole.UserRole)
+        if not isinstance(data,dict):
             return
-        self._mumble_user_context_menu(
-            data, self.mumble_channel_tree.viewport().mapToGlobal(pos)
-        )
+        if data.get("kind")=="user":
+            self._mumble_user_context_menu(data,self.mumble_channel_tree.viewport().mapToGlobal(pos))
+            return
+        if data.get("kind")!="channel" or not self.mumble_native.connected:
+            return
+        menu=QMenu(self)
+        create=menu.addAction("Unterraum anlegen …")
+        edit=menu.addAction("Raum bearbeiten …")
+        edit.setEnabled(int(data.get("id",-1))!=0)
+        chosen=menu.exec(self.mumble_channel_tree.viewport().mapToGlobal(pos))
+        if chosen not in (create,edit):
+            return
+        try:
+            from PySide6.QtCore import QTimer
+            if chosen==create:
+                dialog=ChannelEditor(self,create=True)
+                if dialog.exec()!=QDialog.DialogCode.Accepted:
+                    return
+                values=dialog.values()
+                self.mumble_native.create_channel(data["id"],values["name"],values["temporary"])
+                def apply_position():
+                    rows=self.mumble_native.channel_snapshot()
+                    hits=[row for row in rows if row["parent"]==int(data["id"]) and row["name"]==values["name"]]
+                    if len(hits)==1 and self.mumble_native.connected:
+                        self.mumble_native.edit_channel(hits[0]["id"],values["name"],values["description"],values["position"])
+                QTimer.singleShot(1000,apply_position)
+            else:
+                details=self.mumble_native.channel_details(data["id"])
+                dialog=ChannelEditor(self,create=False,details=details)
+                if dialog.exec()!=QDialog.DialogCode.Accepted:
+                    return
+                values=dialog.values()
+                self.mumble_native.edit_channel(data["id"],values["name"],values["description"],values["position"])
+            QTimer.singleShot(1300,self._refresh_mumble_native_channels)
+            QMessageBox.information(self,"Mumble-Raum",
+                "Änderung an Server gesendet. Der Server prüft die erforderlichen Rechte.")
+        except Exception as exc:
+            QMessageBox.warning(self,"Mumble – Raumverwaltung",str(exc))
 
     def _mumble_participant_context_menu(self, table, pos):
         item = table.itemAt(pos)
