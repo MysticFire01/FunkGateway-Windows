@@ -223,7 +223,7 @@ class MainWindow(QMainWindow):
         self.radio_rx_detector.error.connect(self._radio_rx_error)
         self.radio_rx_active = False
         self.return_guard = ReturnGuard()
-        self.return_guard_enabled = True
+        self.return_guard_enabled = False  # Opt-in until all Windows audio routes are protected
         self._tx_was_active_for_return_guard = False
         self.dtmf_decoder = DtmfDecoder(self)
         self.radio_rx_detector.pcm.connect(self.dtmf_decoder.process_pcm)
@@ -913,6 +913,18 @@ class MainWindow(QMainWindow):
         note.setWordWrap(True)
         f.addRow("", note)
 
+        self.return_guard_checkbox = QCheckBox(
+            "Experimenteller Selbstrücklauf-Schutz für TeamSpeak-Plugin-Brücke"
+        )
+        self.return_guard_checkbox.setChecked(False)
+        self.return_guard_checkbox.setToolTip(
+            "Unterdrückt Funk-RX-Durchgänge, die kurz nach Ende einer "
+            "audioabhängigen Gateway-PTT beginnen. Andere Windows-Audiowege "
+            "sind noch nicht geschützt; nicht als alleinigen Schutz für "
+            "unbeaufsichtigte Funkstellen verwenden."
+        )
+        self.return_guard_checkbox.toggled.connect(self._return_guard_toggled)
+        f.addRow("", self.return_guard_checkbox)
         v.addWidget(tx)
 
         box = QGroupBox("Weitere Audiowege")
@@ -4502,6 +4514,20 @@ class MainWindow(QMainWindow):
             self.tx_audio_level_label.setText("TX-Pegel: —")
         if hasattr(self, "tx_audio_source_label"):
             self.tx_audio_source_label.setText("Quelle: —")
+
+    def _return_guard_toggled(self, enabled):
+        self.return_guard_enabled = bool(enabled)
+        self.return_guard.clear()
+        self._tx_was_active_for_return_guard = False
+        if hasattr(self, "ts_plugin_bridge"):
+            self.ts_plugin_bridge.set_active(
+                bool(self.radio_rx_active and self.gateway_started)
+                and (not enabled or self.return_guard.should_forward_rx())
+            )
+        self.ui_log.appendPlainText(
+            "Experimenteller TS3-Rücklaufschutz: "
+            + ("aktiv" if enabled else "aus")
+        )
 
     def _tx_audio_activity_changed(self, active):
         if self.gateway_started and self._mode() == "gateway" and self.return_guard_enabled:
