@@ -4104,7 +4104,7 @@ class MainWindow(QMainWindow):
         search = QLineEdit()
         search.setPlaceholderText("Hilfe durchsuchen – Suchwort eingeben und Enter drücken")
         browser = QTextBrowser()
-        browser.setOpenExternalLinks(False)
+        browser.setOpenExternalLinks(True)
         browser.setHtml(build_help_html("windows"))
         search.returnPressed.connect(lambda: browser.find(search.text()))
         v.addWidget(search)
