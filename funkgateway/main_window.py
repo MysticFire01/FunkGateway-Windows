@@ -3254,6 +3254,9 @@ class MainWindow(QMainWindow):
             "Benötigt entsprechende Rechte auf dem Mumble-Server."
         )
 
+        menu.addSeparator()
+        kick_action=menu.addAction("Benutzer kicken …")
+        ban_action=menu.addAction("Benutzer bannen …")
         chosen = menu.exec(global_pos)
         if chosen is None:
             return
@@ -3272,8 +3275,30 @@ class MainWindow(QMainWindow):
                 self.mumble_native.set_user_server_deaf(
                     session, not bool(participant.get("server_deaf"))
                 )
+            elif chosen in (kick_action,ban_action):
+                self._moderate_mumble_participant(participant,chosen==ban_action)
         except Exception as exc:
             QMessageBox.warning(self, "Mumble", str(exc))
+
+    def _moderate_mumble_participant(self,data,ban):
+        name=str(data.get("name") or "Teilnehmer")
+        reason,ok=QInputDialog.getText(self,"Mumble – "+("Bannen" if ban else "Kicken"),
+                        "Grund für "+name+" (optional):")
+        if not ok:
+            return
+        confirm=QMessageBox.question(self,"Mumble – Aktion bestätigen",
+            ("Benutzer „"+name+"“ dauerhaft bannen?" if ban
+             else "Benutzer „"+name+"“ vom Server kicken?"),
+            QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if confirm!=QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.mumble_native.moderate_user(int(data["session"]),ban=ban,reason=reason)
+            QMessageBox.information(self,"Mumble",
+                "Anforderung gesendet. Der Server prüft die Berechtigungen.")
+        except Exception as exc:
+            QMessageBox.warning(self,"Mumble – Aktion abgelehnt",str(exc))
 
     def _mumble_channel_context_menu(self, pos):
         item=self.mumble_channel_tree.itemAt(pos)
