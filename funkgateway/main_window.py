@@ -34,6 +34,7 @@ from .integrations.frn_panel import FrnPanel, HotkeyCaptureButton
 from .integrations.chat_widgets import PrivateChatDialog, emoji_button
 from .integrations.mumble_channel_editor import ChannelEditor
 from .integrations.mumble_acl_dialog import MumbleAclDialog
+from .integrations.mumble_acl_classic import MumbleAclClassicDialog
 from .integrations.mumble_registered_panel import MumbleRegisteredPanel
 from .integrations.zello_panel import ZelloPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
@@ -3325,7 +3326,7 @@ class MainWindow(QMainWindow):
         if chosen not in (create,edit,delete,acl):
             return
         if chosen==acl:
-            dialog=MumbleAclDialog(self.mumble_native,int(data["id"]),str(data.get("name") or "Raum"),self)
+            dialog=MumbleAclClassicDialog(self.mumble_native,int(data["id"]),str(data.get("name") or "Raum"),self)
             dialog.exec()
             return
         try:
