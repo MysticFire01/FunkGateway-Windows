@@ -5900,7 +5900,10 @@ class MainWindow(QMainWindow):
         if decision and decision.event:
             self.ui_log.appendPlainText("Rücklaufschutz: " + decision.event + f" ({decision.duration_ms} ms)")
             if decision.escalate:
-                self.ui_log.appendPlainText("Rücklaufschutz: wiederholte Rückläufe erkannt – bitte Funkweg kontrollieren.")
+                self.ui_log.appendPlainText("Rücklaufschutz: wiederholte Rückläufe – Gateway-PTT wird sicher abgeschaltet.")
+                self._stop_gateway_ptt()
+                self.status_ptt.setText("PTT: Schutzabschaltung · manueller Neustart erforderlich")
+                return
         if hasattr(self, "ts_rx_state_label"):
             self.ts_rx_state_label.setText(
                 "Funk-RX: AKTIV" if active else "Funk-RX: frei"
