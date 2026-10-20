@@ -91,6 +91,7 @@ class MumbleNativeGateway(QObject):
     aclReceived = Signal(object)
     aclDenied = Signal(str)
     registeredUsersReceived = Signal(object)
+    banListReceived = Signal(object)
     error = Signal(str)
 
     def __init__(self, tx_engine=None, parent=None):
@@ -287,10 +288,25 @@ class MumbleNativeGateway(QObject):
             from pymumble_py3 import mumble_pb2
             from pymumble_py3.constants import PYMUMBLE_MSG_TYPES_USERLIST
             old_dispatch=mumble.dispatch_control_message
+            from pymumble_py3.constants import PYMUMBLE_MSG_TYPES_BANLIST
             from pymumble_py3.constants import PYMUMBLE_MSG_TYPES_CHANNELSTATE
             self._channel_descriptions={}
             self._description_requests=set()
             def dispatch_with_userlist(packet_type,payload):
+                if packet_type==PYMUMBLE_MSG_TYPES_BANLIST:
+                    message=mumble_pb2.BanList()
+                    message.ParseFromString(payload)
+                    if not message.query:
+                        # Only send authenticated server responses to the UI.
+                        entries=[]
+                        for ban in message.bans:
+                            entries.append({
+                                "address":bytes(ban.address),"mask":int(ban.mask),
+                                "name":str(ban.name),"hash":str(ban.hash),
+                                "reason":str(ban.reason),"start":str(ban.start),
+                                "duration":int(ban.duration),
+                            })
+                        self.banListReceived.emit(entries)
                 if packet_type==PYMUMBLE_MSG_TYPES_CHANNELSTATE:
                     msg=mumble_pb2.ChannelState()
                     msg.ParseFromString(payload)
@@ -777,6 +793,33 @@ class MumbleNativeGateway(QObject):
 
     def cached_registered_users(self):
         return list(getattr(self,"_registered_users_cache",[]) or []) if self.connected else []
+
+    def request_ban_list(self):
+        if not self.connected or self._mumble is None:
+            raise RuntimeError("Mumble ist nicht verbunden.")
+        from pymumble_py3 import mumble_pb2
+        from pymumble_py3.constants import PYMUMBLE_MSG_TYPES_BANLIST
+        message=mumble_pb2.BanList()
+        message.query=True
+        self._mumble.send_message(PYMUMBLE_MSG_TYPES_BANLIST,message)
+
+    def replace_ban_list(self,entries):
+        if not self.connected or self._mumble is None:
+            raise RuntimeError("Mumble ist nicht verbunden.")
+        from pymumble_py3 import mumble_pb2
+        from pymumble_py3.constants import PYMUMBLE_MSG_TYPES_BANLIST
+        message=mumble_pb2.BanList()
+        message.query=False
+        for item in entries:
+            target=message.bans.add()
+            target.address=bytes(item["address"])
+            target.mask=int(item["mask"])
+            for field in ("name","hash","reason","start"):
+                if item.get(field):
+                    setattr(target,field,str(item[field]))
+            if item.get("duration") is not None:
+                target.duration=int(item["duration"])
+        self._mumble.send_message(PYMUMBLE_MSG_TYPES_BANLIST,message)
 
     def request_registered_users(self):
         if not self.connected or self._mumble is None:
