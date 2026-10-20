@@ -2616,7 +2616,7 @@ class MainWindow(QMainWindow):
                 item.setToolTip(0, "Aktueller Channel")
             by_id[int(channel["id"])] = item
 
-        for channel in channels:
+        for channel in sorted(channels, key=lambda c:(int(c.get("position") or 0),str(c.get("name") or "").casefold(),int(c["id"]))):
             item = by_id[int(channel["id"])]
             parent_id = channel.get("parent")
             if parent_id is not None and int(parent_id) in by_id and int(parent_id) != int(channel["id"]):
