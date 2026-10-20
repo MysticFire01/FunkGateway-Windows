@@ -57,7 +57,7 @@ class AnnouncementPlayer(QObject):
             return False
         try:
             reader=wave.open(str(path),"rb")
-            if reader.getsampwidth()!=2 or reader.getnchannels() not in (1,2) or reader.iscompressed():
+            if reader.getsampwidth()!=2 or reader.getnchannels() not in (1,2) or reader.getcomptype() != "NONE":
                 reader.close()
                 self.status.emit("WAV benötigt PCM 16 Bit, mono oder stereo.")
                 return False
