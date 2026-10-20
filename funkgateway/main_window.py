@@ -42,6 +42,7 @@ from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contras
 from .helptext import build_help_html
 from .return_guard import ReturnGuard
 from .ptt import DryPTT, SerialPTT, SafetyPTT, serial_ports
+from .cmedia_ptt import CMediaHidPTT, compatible_devices
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
 from .integrations.mumble_windows import MumbleWindowsBackend
 from .integrations.mumble_native import MumbleNativeGateway
@@ -951,6 +952,7 @@ class MainWindow(QMainWindow):
         self.gateway_ptt_backend = QComboBox()
         self.gateway_ptt_backend.addItem("Test-PTT (keine Hardware)", "dry")
         self.gateway_ptt_backend.addItem("Seriell RTS / DTR", "serial")
+        self.gateway_ptt_backend.addItem("CM108 / CM109 / CM119 GPIO (experimentell)", "cmedia")
 
         self.gateway_ptt_port = QComboBox()
         self.gateway_ptt_port.setEditable(False)
@@ -958,6 +960,18 @@ class MainWindow(QMainWindow):
         self.gateway_ptt_line = QComboBox()
         self.gateway_ptt_line.addItems(["RTS", "DTR"])
         self.gateway_ptt_invert = QCheckBox("PTT-Logik invertieren")
+        self.gateway_cmedia_device = QComboBox()
+        self.gateway_cmedia_gpio = QSpinBox()
+        self.gateway_cmedia_gpio.setRange(1, 8)
+        self.gateway_cmedia_gpio.setValue(3)
+        self.gateway_cmedia_refresh = QPushButton("USB-HID-Geräte suchen")
+        self.gateway_cmedia_refresh.clicked.connect(self._refresh_cmedia_devices)
+        self.gateway_cmedia_warning = QLabel(
+            "Experimentell: Nicht mit echter Hardware getestet. "
+            "Nur geeignete, für GPIO vorbereitete USB-Soundkarten verwenden. "
+            "PTT bei Fehler am Funkgerät abschalten."
+        )
+        self.gateway_cmedia_warning.setWordWrap(True)
         self.gateway_ptt_status = QLabel("Gateway PTT: nicht gestartet")
         self.gateway_ptt_status.setWordWrap(True)
 
@@ -973,10 +987,15 @@ class MainWindow(QMainWindow):
         hf.addRow("Port:", self.gateway_ptt_port)
         hf.addRow("", refresh)
         hf.addRow("Leitung:", self.gateway_ptt_line)
+        hf.addRow("CMedia-Gerät:", self.gateway_cmedia_device)
+        hf.addRow("", self.gateway_cmedia_refresh)
+        hf.addRow("GPIO-Leitung:", self.gateway_cmedia_gpio)
+        hf.addRow("", self.gateway_cmedia_warning)
         hf.addRow("", self.gateway_ptt_invert)
         hf.addRow("Status:", self.gateway_ptt_status)
         hf.addRow("", test)
         v.addWidget(hw)
+        self._refresh_cmedia_devices()
 
         diag=QGroupBox("PTT-Diagnose (RTS/DTR)")
         df=QVBoxLayout(diag)
@@ -4909,6 +4928,21 @@ class MainWindow(QMainWindow):
                 "DTMF: autorisierter Gateway-Befehl ausgeführt: " + command
             )
 
+    def _refresh_cmedia_devices(self):
+        if not hasattr(self, "gateway_cmedia_device"):
+            return
+        previous = self.gateway_cmedia_device.currentData()
+        self.gateway_cmedia_device.clear()
+        for d in compatible_devices():
+            title = "{} ({:04X}:{:04X}, Interface {})".format(
+                d["product_string"], d["vendor_id"],
+                d["product_id"], d["interface_number"])
+            self.gateway_cmedia_device.addItem(title, d["path"])
+        if previous is not None:
+            idx = self.gateway_cmedia_device.findData(previous)
+            if idx >= 0:
+                self.gateway_cmedia_device.setCurrentIndex(idx)
+
     def _make_gateway_ptt(self):
         backend = self.gateway_ptt_backend.currentData()
         if backend == "dry":
@@ -4918,6 +4952,14 @@ class MainWindow(QMainWindow):
                     "Bitte eine echte PTT-Schnittstelle wählen."
                 )
             raw_ptt = DryPTT()
+        elif backend == "cmedia":
+            path = self.gateway_cmedia_device.currentData()
+            if not path:
+                raise RuntimeError("Kein unterstütztes CMedia-HID-Gerät gefunden.")
+            raw_ptt = CMediaHidPTT(
+                path, self.gateway_cmedia_gpio.value(),
+                self.gateway_ptt_invert.isChecked()
+            )
         else:
             port_data = self.gateway_ptt_port.currentData()
             if port_data == "__manual_value__":
@@ -6355,6 +6397,7 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self.gateway_ptt_line.setCurrentIndex(idx)
             self.gateway_ptt_invert.setChecked(bool(ptt_cfg.get("invert", False)))
+            self.gateway_cmedia_gpio.setValue(int(ptt_cfg.get("cmedia_gpio", 3)))
             if hasattr(self, "gateway_safety_enabled"):
                 self.gateway_safety_enabled.setChecked(bool(ptt_cfg.get("safety_enabled", True)))
                 self.gateway_tot.setValue(int(ptt_cfg.get("tot_s", 180)))
@@ -6475,6 +6518,7 @@ class MainWindow(QMainWindow):
                 ),
                 "line": self.gateway_ptt_line.currentText(),
                 "invert": self.gateway_ptt_invert.isChecked(),
+                "cmedia_gpio": self.gateway_cmedia_gpio.value(),
                 "safety_enabled": self.gateway_safety_enabled.isChecked(),
                 "tot_s": self.gateway_tot.value(),
                 "min_pause_ms": self.gateway_min_pause.value(),
