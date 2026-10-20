@@ -48,6 +48,7 @@ from .mumble_certificates import (
 from .radio_rx import RadioRxDetector, RadioAudioBridge, input_devices, output_devices
 from .ts3_plugin_bridge import TeamSpeakPluginAudioBridge, PLUGIN_VERSION as TS_PLUGIN_VERSION
 from .tx_audio import AudioTxEngine, SoundInputTxSource
+from .windows_announcements import AnnouncementPlayer, SLOTS
 from .wasapi_loopback import WasapiSystemLoopbackSource
 from .dtmf import DtmfDecoder
 from .voip_parrot_audio import VoipParrotCapture
@@ -231,6 +232,7 @@ class MainWindow(QMainWindow):
             log=lambda msg: self.ui_log.appendPlainText(msg) if hasattr(self, "ui_log") else None
         )
         self.tx_audio_engine = AudioTxEngine(self)
+        self.announcement_player = AnnouncementPlayer(self.tx_audio_engine,self)
         self.mumble_native = MumbleNativeGateway(self.tx_audio_engine, self)
         self._mumble_owns_tx_engine = False
         self.mumble_native.status.connect(self._mumble_native_status_changed)
@@ -264,6 +266,13 @@ class MainWindow(QMainWindow):
         self._build_update_menu()
         self._build_shell()
         self._build_hotkeys()
+        self.announcement_player.status.connect(self._announcement_status)
+        self.ident_main_btn.clicked.connect(lambda:self._send_announcement('02_rufzeichenbake.wav'))
+        self._last_ident_sent=time.monotonic()
+        self.ident_timer=QTimer(self)
+        self.ident_timer.setInterval(1000)
+        self.ident_timer.timeout.connect(self._auto_ident_tick)
+        self.ident_timer.start()
         self.parrot_timer = QTimer(self)
         self.parrot_timer.setInterval(150)
         self.parrot_timer.timeout.connect(self._parrot_tick)
@@ -332,7 +341,7 @@ class MainWindow(QMainWindow):
         self.ident_main_btn.setEnabled(False)
         self.start_main_btn.setToolTip("Initialisiert die Gateway-PTT-Grundfunktion. Audio-Routing folgt separat.")
         self.stop_main_btn.setToolTip("Löst PTT und schließt den Gateway-PTT-Ausgang.")
-        self.ident_main_btn.setToolTip("Rufzeichen-/ID-Funktion wird mit dem Windows-Gateway-Audiokern portiert.")
+        self.ident_main_btn.setToolTip("Rufzeichen-WAV einmalig über das aktive Gateway-TX-Audio ausgeben.")
         self.emergency_main_btn.setStyleSheet("font-weight: bold;")
         self.emergency_main_btn.clicked.connect(self._emergency)
         self.frn_ptt_btn.pressed.connect(self._main_ptt_pressed)
@@ -1283,11 +1292,76 @@ class MainWindow(QMainWindow):
 
         announcements = QWidget()
         announcement_form = QFormLayout(announcements)
-        note = QLabel("Schutzansagen per WAV sind unter Windows noch nicht implementiert.")
-        note.setWordWrap(True)
-        announcement_form.addRow("", note)
+        self.announcement_fields={}
+        for filename,label in SLOTS:
+            field=QLineEdit()
+            field.setPlaceholderText("Standard: "+filename)
+            browse=QPushButton("WAV …")
+            browse.clicked.connect(lambda _checked=False,f=field:self._choose_announcement(f))
+            test=QPushButton("Senden")
+            test.clicked.connect(lambda _checked=False,key=filename:self._send_announcement(key))
+            row=QHBoxLayout()
+            row.addWidget(field,1)
+            row.addWidget(browse)
+            row.addWidget(test)
+            announcement_form.addRow(label+":",row)
+            self.announcement_fields[filename]=field
+        self.ident_auto=QCheckBox("Rufzeichenbake automatisch senden (nur bei aktivem Funk-Gateway)")
+        self.ident_auto.setChecked(False)
+        self.ident_interval=QSpinBox()
+        self.ident_interval.setRange(1,1440)
+        self.ident_interval.setValue(10)
+        self.ident_interval.setSuffix(" min")
+        announcement_form.addRow("",self.ident_auto)
+        announcement_form.addRow("Rufzeichen-Intervall:",self.ident_interval)
+        self.announcement_status=QLabel("Standardansagen werden beim Release mitgeliefert. Eigene WAVs haben Vorrang.")
+        self.announcement_status.setWordWrap(True)
+        announcement_form.addRow("",self.announcement_status)
         tabs.addTab(announcements, "Ansagen")
         self._scroll_tab(page, "Schutz")
+
+    def _announcement_status(self,message):
+        if hasattr(self,"announcement_status"):
+            self.announcement_status.setText(str(message))
+        if hasattr(self,"ui_log"):
+            self.ui_log.appendPlainText("Ansagen: "+str(message))
+
+    def _choose_announcement(self,field):
+        filename,_=QFileDialog.getOpenFileName(self,"WAV auswählen",field.text(),"WAV (*.wav)")
+        if filename:
+            field.setText(filename)
+
+    def _announcement_path(self,key):
+        field=self.announcement_fields.get(key)
+        custom=field.text().strip() if field else ""
+        if custom:
+            return custom
+        return str(APP_DIR/"default_wavs"/key)
+
+    def _send_announcement(self,key):
+        if self._mode() not in ("gateway","radio_parrot") or not self.gateway_started:
+            self._announcement_status("Funk-Gateway ist nicht gestartet. Ansage nicht gesendet.")
+            return False
+        ok=self.announcement_player.play(self._announcement_path(key))
+        if ok and key=="02_rufzeichenbake.wav":
+            self._last_ident_sent=time.monotonic()
+        return ok
+
+    def _auto_ident_tick(self):
+        if not hasattr(self,"ident_auto") or not self.ident_auto.isChecked():
+            return
+        if not self.gateway_started or self._mode()!="gateway":
+            return
+        if self.announcement_player.playing or self.tx_audio_engine.active:
+            return
+        if time.monotonic()-self._last_ident_sent<self.ident_interval.value()*60:
+            return
+        # A missing/default WAV is never a reason for recurring popups.
+        # Defer until audio/engine are ready; otherwise show status only once.
+        if not self.tx_audio_engine.running:
+            return
+        self._last_ident_sent=time.monotonic()
+        self._send_announcement("02_rufzeichenbake.wav")
 
     def _build_integrations(self):
         page = QWidget()
@@ -4774,6 +4848,7 @@ class MainWindow(QMainWindow):
             self.gateway_ptt = self._make_gateway_ptt()
             self.gateway_ptt.key(False)
             self.gateway_started = True
+            self.ident_main_btn.setEnabled(True)
             self.gateway_ptt_status.setText("Gateway PTT: bereit")
             self.status_ptt.setText("PTT: Gateway bereit")
             self.start_main_btn.setEnabled(False)
@@ -4811,6 +4886,8 @@ class MainWindow(QMainWindow):
         ptt = self.gateway_ptt
         self.gateway_ptt = None
         self.gateway_started = False
+        self.announcement_player.stop()
+        self.ident_main_btn.setEnabled(False)
         if ptt is not None:
             try:
                 ptt.key(False)
@@ -6025,6 +6102,12 @@ class MainWindow(QMainWindow):
             data = json.loads(CFG_FILE.read_text(encoding="utf-8"))
             self.frn_panel.load_config(data.get("frn", {}))
             self.zello_panel.load_config(data.get("zello", {}))
+            ann=data.get("announcements",{})
+            if isinstance(ann,dict):
+                for filename,field in self.announcement_fields.items():
+                    field.setText(str(ann.get("files",{}).get(filename,"") or ""))
+                self.ident_auto.setChecked(bool(ann.get("auto_ident",False)))
+                self.ident_interval.setValue(int(ann.get("ident_interval",10) or 10))
             ui = data.get("ui", {})
             mode = ui.get("mode", "pc")
             pos = self.operating_mode.findData(mode)
@@ -6225,6 +6308,9 @@ class MainWindow(QMainWindow):
             "version": VERSION,
             "frn": self.frn_panel.to_config(),
             "zello": self.zello_panel.to_config(),
+            "announcements": {"files": {key:field.text().strip() for key,field in self.announcement_fields.items()},
+                              "auto_ident":self.ident_auto.isChecked(),
+                              "ident_interval":self.ident_interval.value()},
             "ui": {
                 "mode": self._mode(),
                 "theme": self.theme_mode.currentText(),
