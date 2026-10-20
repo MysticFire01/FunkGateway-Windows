@@ -33,6 +33,7 @@ from .hotkeys import LocalPttHotkey, ModifierHoldWatcher
 from .integrations.frn_panel import FrnPanel, HotkeyCaptureButton
 from .integrations.chat_widgets import PrivateChatDialog, emoji_button
 from .integrations.mumble_channel_editor import ChannelEditor
+from .integrations.mumble_acl_dialog import MumbleAclDialog
 from .integrations.zello_panel import ZelloPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
 from .ptt import DryPTT, SerialPTT, SafetyPTT, serial_ports
@@ -3290,10 +3291,15 @@ class MainWindow(QMainWindow):
         create=menu.addAction("Unterraum anlegen …")
         edit=menu.addAction("Raum bearbeiten …")
         edit.setEnabled(int(data.get("id",-1))!=0)
+        acl=menu.addAction("Berechtigungen verwalten …")
         delete=menu.addAction("Raum löschen …")
         delete.setEnabled(int(data.get("id",-1))!=0)
         chosen=menu.exec(self.mumble_channel_tree.viewport().mapToGlobal(pos))
-        if chosen not in (create,edit,delete):
+        if chosen not in (create,edit,delete,acl):
+            return
+        if chosen==acl:
+            dialog=MumbleAclDialog(self.mumble_native,int(data["id"]),str(data.get("name") or "Raum"),self)
+            dialog.exec()
             return
         try:
             from PySide6.QtCore import QTimer
