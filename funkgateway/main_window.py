@@ -39,6 +39,7 @@ from .integrations.mumble_registered_panel import MumbleRegisteredPanel
 from .integrations.mumble_ban_panel import MumbleBanPanel
 from .integrations.zello_panel import ZelloPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
+from .return_guard import ReturnGuard
 from .ptt import DryPTT, SerialPTT, SafetyPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
 from .integrations.mumble_windows import MumbleWindowsBackend
@@ -221,6 +222,9 @@ class MainWindow(QMainWindow):
         self.radio_rx_detector.level.connect(self._radio_rx_level_changed)
         self.radio_rx_detector.error.connect(self._radio_rx_error)
         self.radio_rx_active = False
+        self.return_guard = ReturnGuard()
+        self.return_guard_enabled = True
+        self._tx_was_active_for_return_guard = False
         self.dtmf_decoder = DtmfDecoder(self)
         self.radio_rx_detector.pcm.connect(self.dtmf_decoder.process_pcm)
         self.dtmf_decoder.digit.connect(self._dtmf_digit_received)
@@ -4500,6 +4504,10 @@ class MainWindow(QMainWindow):
             self.tx_audio_source_label.setText("Quelle: —")
 
     def _tx_audio_activity_changed(self, active):
+        if self.gateway_started and self._mode() == "gateway" and self.return_guard_enabled:
+            if not active and self._tx_was_active_for_return_guard:
+                self.return_guard.tx_finished()
+            self._tx_was_active_for_return_guard = bool(active)
         if active:
             self.gateway_ptt_status.setText("Gateway PTT: EIN (TX-Audio)")
             self.status_ptt.setText("PTT: SENDEN · Audio")
@@ -4948,6 +4956,8 @@ class MainWindow(QMainWindow):
 
     def _stop_gateway_ptt(self, silent=False):
         self._parrot_reset()
+        self.return_guard.clear()
+        self._tx_was_active_for_return_guard = False
         # Stop audio sources first. They own the automatic PTT activity and
         # must release it before the serial backend is closed.
         self._stop_tx_audio()
@@ -5710,7 +5720,7 @@ class MainWindow(QMainWindow):
                     except Exception:
                         pass
                 try:
-                    self.ts_plugin_bridge.set_active(bool(self.radio_rx_active))
+                    self.ts_plugin_bridge.set_active(bool(self.radio_rx_active) and (not self.return_guard_enabled or self.return_guard.should_forward_rx()))
                 except Exception:
                     pass
                 self.ts_audio_bridge_status.setText(
@@ -5859,6 +5869,12 @@ class MainWindow(QMainWindow):
 
     def _radio_rx_activity_changed(self, active):
         self.radio_rx_active = bool(active)
+        decision = self.return_guard.rx_changed(bool(active)) if (self.gateway_started and self._mode() == "gateway" and self.return_guard_enabled) else None
+        allowed_rx = bool(active) and (decision is None or not decision.block)
+        if decision and decision.event:
+            self.ui_log.appendPlainText("Rücklaufschutz: " + decision.event + f" ({decision.duration_ms} ms)")
+            if decision.escalate:
+                self.ui_log.appendPlainText("Rücklaufschutz: wiederholte Rückläufe erkannt – bitte Funkweg kontrollieren.")
         if hasattr(self, "ts_rx_state_label"):
             self.ts_rx_state_label.setText(
                 "Funk-RX: AKTIV" if active else "Funk-RX: frei"
@@ -5881,10 +5897,10 @@ class MainWindow(QMainWindow):
             and (self.ts_audio_bridge_mode.currentData() or "plugin") == "plugin"
         ):
             try:
-                self.ts_plugin_bridge.set_active(bool(active))
+                self.ts_plugin_bridge.set_active(allowed_rx)
                 self.ts_audio_bridge_status.setText(
                     "TS3-Plugin-Brücke: SENDEN"
-                    if active else "TS3-Plugin-Brücke: bereit"
+                    if allowed_rx else "TS3-Plugin-Brücke: bereit"
                 )
             except Exception as exc:
                 self._radio_bridge_error(str(exc))
