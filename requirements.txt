@@ -10,3 +10,5 @@ cryptography==43.0.3
 qrcode[pil]>=7.4,<9
 
 keyring>=24,<27
+
+hidapi>=0.14,<1  # Experimental C-Media HID GPIO PTT
