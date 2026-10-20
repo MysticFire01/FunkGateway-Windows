@@ -4229,6 +4229,13 @@ class MainWindow(QMainWindow):
     def _mode_changed(self, *_args):
         self._stop_voip_parrot_capture()
         self._current_mode = self.operating_mode.currentData() or "pc"
+        if self._current_mode in ("gateway", "radio_parrot", "voip_parrot") and hasattr(self, "mumble_pc_ptt_enabled"):
+            # Gateway and parrot modes key PTT automatically; the PC microphone
+            # must never share the same F10 shortcut with those operations.
+            self.mumble_pc_ptt_enabled.setChecked(False)
+            self.mumble_pc_ptt_enabled.setEnabled(False)
+        elif hasattr(self, "mumble_pc_ptt_enabled"):
+            self.mumble_pc_ptt_enabled.setEnabled(True)
         if self._current_mode not in ("gateway", "radio_parrot"):
             self._stop_tx_audio()
             self._stop_radio_rx_detector()
