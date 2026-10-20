@@ -36,6 +36,7 @@ from .integrations.mumble_channel_editor import ChannelEditor
 from .integrations.mumble_acl_dialog import MumbleAclDialog
 from .integrations.mumble_acl_classic import MumbleAclClassicDialog
 from .integrations.mumble_registered_panel import MumbleRegisteredPanel
+from .integrations.mumble_ban_panel import MumbleBanPanel
 from .integrations.zello_panel import ZelloPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
 from .ptt import DryPTT, SerialPTT, SafetyPTT, serial_ports
@@ -2017,6 +2018,7 @@ class MainWindow(QMainWindow):
         cv.addStretch(1)
         self.mumble_tabs.addTab(mw, "Zertifikate")
         self.mumble_tabs.addTab(MumbleRegisteredPanel(self.mumble_native,self),"Registrierte Benutzer")
+        self.mumble_tabs.addTab(MumbleBanPanel(self.mumble_native,self),"Bannliste")
         self._refresh_mumble_certificates()
         QTimer.singleShot(0, lambda: self._test_mumble_certificate_backend(show_dialog=False))
 
