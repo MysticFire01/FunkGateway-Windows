@@ -4974,7 +4974,7 @@ class MainWindow(QMainWindow):
                 self.gateway_ptt_invert.isChecked(),
             )
 
-        if not self.gateway_safety_enabled.isChecked():
+        if backend != "cmedia" and not self.gateway_safety_enabled.isChecked():
             return raw_ptt
 
         return SafetyPTT(
