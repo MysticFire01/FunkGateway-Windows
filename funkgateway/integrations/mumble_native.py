@@ -578,12 +578,20 @@ class MumbleNativeGateway(QObject):
         return True
 
     def configure_pc_ptt(self, enabled, input_device=None):
-        self._pc_ptt_enabled = bool(enabled)
-        if input_device is not None:
+        enabled = bool(enabled)
+        changed = enabled != self._pc_ptt_enabled
+        if input_device is not None and input_device != self._capture_device:
             self._capture_device = input_device
-        if self._connected and (self._capture_enabled or self._pc_ptt_enabled):
-            self._start_capture()
-        elif not self._capture_enabled:
+            changed = True
+        self._pc_ptt_enabled = enabled
+        if not enabled:
+            self._pc_ptt_active = False
+            self._own_tx_active = False
+        # Reopening the stream on each PTT press loses the first TX edge.
+        if self._connected and (self._capture_enabled or enabled):
+            if changed or not (self._capture_thread and self._capture_thread.is_alive()):
+                self._start_capture()
+        elif not self._capture_enabled and (changed or self._capture_thread):
             self._stop_capture()
 
     def set_pc_ptt(self, active):
