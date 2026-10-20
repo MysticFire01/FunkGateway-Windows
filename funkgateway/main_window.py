@@ -4253,11 +4253,13 @@ class MainWindow(QMainWindow):
             self.mumble_native.set_radio_to_mumble(False)
             self.mumble_native.set_receive_to_radio(False)
         self._apply_mode()
+        self._configure_hotkey()
+        self._configure_mumble_hotkey()
         self._update_live_status()
 
     def _apply_mode(self):
         mode = self._current_mode
-        self.frn_panel.set_gateway_mode(mode in ("gateway", "radio_parrot"))
+        self.frn_panel.set_gateway_mode(mode in ("gateway", "radio_parrot", "voip_parrot"))
         descriptions = {
             "pc": "PC-User: FRN und künftig TeamSpeak/Mumble ohne Funkhardware.",
             "gateway": "Funk-Gateway: Funk ↔ VoIP. Windows-Audio/PTT-Portierung läuft.",
@@ -4553,6 +4555,9 @@ class MainWindow(QMainWindow):
         self.modifier_watcher.set_key("")
         self.global_hotkey.stop()
 
+        if self._mode() != "pc":
+            self.frn_panel.set_ptt_hotkey_status("aus · Gateway/Papagei steuert PTT automatisch")
+            return
         if not hotkey:
             self.frn_panel.set_ptt_hotkey_status("aus")
             return
@@ -4584,6 +4589,9 @@ class MainWindow(QMainWindow):
             hasattr(self, "mumble_pc_ptt_enabled")
             and self.mumble_pc_ptt_enabled.isChecked()
         )
+        if self._mode() != "pc":
+            self._set_mumble_hotkey_status("aus · Gateway/Papagei steuert PTT automatisch")
+            return
         if not enabled or not hotkey:
             self._set_mumble_hotkey_status("aus")
             return
