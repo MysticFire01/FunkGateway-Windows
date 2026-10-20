@@ -765,6 +765,7 @@ class MumbleNativeGateway(QObject):
                 "id": cid_i,
                 "parent": parent_i,
                 "name": str(self._prop(channel, "name", "") or f"Channel {cid_i}"),
+                "position": int(self._prop(channel, "position", 0) or 0),
                 "users": int(counts.get(cid_i, 0)),
                 "current": current_id is not None and cid_i == current_id,
             })
