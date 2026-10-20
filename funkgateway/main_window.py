@@ -305,6 +305,7 @@ class MainWindow(QMainWindow):
         self.ts_plugin_watchdog.start()
 
         self._load_config()
+        self._refresh_banner()
         self._ui_level_changed()
         self._apply_mode()
         self._apply_theme_from_ui()
