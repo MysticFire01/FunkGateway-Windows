@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QScrollArea, QPlainTextEdit, QLineEdit, QDoubleSpinBox, QSpinBox,
     QInputDialog, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QTreeWidget, QTreeWidgetItem, QFileDialog, QMenu, QDialog,
-    QSlider, QDialogButtonBox
+    QSlider, QDialogButtonBox, QTextBrowser
 )
 
 from .constants import APP_NAME, VERSION, CFG_FILE, APP_DIR, ensure_cfg
@@ -39,6 +39,7 @@ from .integrations.mumble_registered_panel import MumbleRegisteredPanel
 from .integrations.mumble_ban_panel import MumbleBanPanel
 from .integrations.zello_panel import ZelloPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
+from .helptext import build_help_html
 from .return_guard import ReturnGuard
 from .ptt import DryPTT, SerialPTT, SafetyPTT, serial_ports
 from .integrations.teamspeak import TeamSpeakClientQuery, read_default_api_key
@@ -4078,16 +4079,15 @@ class MainWindow(QMainWindow):
     def _build_help(self):
         page = QWidget()
         v = QVBoxLayout(page)
-        text = QLabel(
-            "<h2>Hilfe</h2>"
-            "<p>Windows-Port von FunkGateway. Die Oberfläche folgt jetzt dem Linux-Aufbau.</p>"
-            "<p><b>FRN:</b> funktionsfähig. <b>TeamSpeak/Mumble:</b> nächste Portierungsschritte. "
-            "<b>Gateway-Audio/PTT:</b> Windows-spezifische Umsetzung folgt.</p>"
-        )
-        text.setWordWrap(True)
-        v.addWidget(text)
-        v.addStretch(1)
-        self._scroll_tab(page, "Hilfe")
+        search = QLineEdit()
+        search.setPlaceholderText("Hilfe durchsuchen – Suchwort eingeben und Enter drücken")
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(False)
+        browser.setHtml(build_help_html("windows"))
+        search.returnPressed.connect(lambda: browser.find(search.text()))
+        v.addWidget(search)
+        v.addWidget(browser)
+        self.tabs.addTab(page, "Hilfe")
 
     def _set_form_field_visible(self, widget, visible):
         if widget is None:
