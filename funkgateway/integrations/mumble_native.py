@@ -606,6 +606,8 @@ class MumbleNativeGateway(QObject):
                 break
 
     def _queue_playback(self, pcm):
+        if self._stop.is_set() or self._playback_stop.is_set() or not self._connected:
+            return
         if not self._playback_enabled or not pcm:
             return
         try:
