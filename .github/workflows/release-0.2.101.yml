@@ -256,3 +256,5 @@ jobs:
 # retrigger after updater syntax fix
 
 # retrigger after NOMINMAX fix
+
+# Rebuild after constants.py was bumped to 0.2.101 (previous runs used 0.2.100).
