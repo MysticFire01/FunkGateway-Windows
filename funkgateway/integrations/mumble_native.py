@@ -175,9 +175,11 @@ class MumbleNativeGateway(QObject):
         receive_to_radio=False, radio_input=None, radio_to_mumble=False,
         threshold_dbfs=-35.0, hang_ms=700, certfile="", keyfile="",
         pc_ptt_enabled=False, playback_enabled=False, playback_device=None,
+        access_tokens=None,
     ):
         self.disconnect()
         self._stop.clear()
+        self._access_tokens=list(access_tokens or [])
         self._volume_server = f"{str(host).strip().casefold()}:{int(port)}"
         self._receive_to_radio = bool(receive_to_radio)
         self._capture_device = radio_input
@@ -259,6 +261,7 @@ class MumbleNativeGateway(QObject):
 
             mumble = DiagnosticMumble(
                 host, nickname, port=int(port), password=password,
+                tokens=list(self._access_tokens),
                 certfile=(self._certfile or None),
                 keyfile=(self._keyfile or None),
                 reconnect=False, stereo=False, debug=False,
