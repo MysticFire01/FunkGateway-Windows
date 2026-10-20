@@ -1573,6 +1573,9 @@ class MainWindow(QMainWindow):
         self.mumble_native_password = QLineEdit()
         self.mumble_native_password.setEchoMode(QLineEdit.EchoMode.Password)
         self.mumble_native_password.setPlaceholderText("optional")
+        self.mumble_access_tokens = QLineEdit()
+        self.mumble_access_tokens.setEchoMode(QLineEdit.EchoMode.Password)
+        self.mumble_access_tokens.setPlaceholderText("Zugangstokens, durch Komma getrennt – nur für diese Verbindung")
         self.mumble_native_connect_btn = QPushButton("Verbinden")
         self.mumble_native_disconnect_btn = QPushButton("Trennen")
         self.mumble_native_disconnect_btn.setEnabled(False)
@@ -1599,6 +1602,7 @@ class MainWindow(QMainWindow):
         mf.addRow("Start-Channel:", self.mumble_channel)
         mf.addRow("Allgemeiner Gateway-Nickname:", self.mumble_native_nick)
         mf.addRow("Server-Passwort:", self.mumble_native_password)
+        mf.addRow("Raum-Zugangstokens:", self.mumble_access_tokens)
         mf.addRow("", self.mumble_native_enabled)
         connrow = QWidget()
         connlay = QHBoxLayout(connrow)
@@ -2345,6 +2349,7 @@ class MainWindow(QMainWindow):
                 nickname,
                 self.mumble_native_password.text(),
                 self.mumble_channel.text().strip(),
+                access_tokens=[x.strip() for x in self.mumble_access_tokens.text().split(",") if x.strip()],
                 receive_to_radio=self.mumble_net_to_radio.isChecked(),
                 radio_input=self.mumble_rx_input.currentData(),
                 radio_to_mumble=self.mumble_radio_to_net.isChecked(),
