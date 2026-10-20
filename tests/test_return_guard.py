@@ -14,7 +14,7 @@ class ReturnGuardTests(unittest.TestCase):
     def test_short_echo_blocked_and_counted(self):
         self.guard.tx_finished()
         self.advance(.2)
-        self.assertFalse(self.guard.rx_changed(True).block is False)
+        self.assertTrue(self.guard.rx_changed(True).block)
         self.advance(.4)
         event = self.guard.rx_changed(False)
         self.assertEqual(event.event, "return")
