@@ -1862,7 +1862,7 @@ class MainWindow(QMainWindow):
         self.mumble_net_to_radio = QCheckBox("Mumble → Funk / RTS-DTR-PTT")
         self.mumble_net_to_radio.toggled.connect(self._mumble_net_to_radio_changed)
         self.mumble_pc_ptt_enabled = QCheckBox("PC-User: Mikrofon-PTT für Mumble")
-        self.mumble_pc_ptt_enabled.toggled.connect(self._configure_mumble_hotkey)
+        self.mumble_pc_ptt_enabled.toggled.connect(self._mumble_pc_ptt_enabled_changed)
         self.mumble_pc_ptt_btn = QPushButton("Mumble PTT halten")
         self.mumble_pc_ptt_btn.setMinimumHeight(42)
         self.mumble_pc_ptt_btn.pressed.connect(self._mumble_pc_ptt_press)
@@ -3548,6 +3548,19 @@ class MainWindow(QMainWindow):
             self.mumble_native_status_label.setText(text)
         if hasattr(self, "ui_log"):
             self.ui_log.appendPlainText(text)
+
+    def _mumble_pc_ptt_enabled_changed(self, enabled):
+        """Apply PC-PTT permission immediately without reconnecting Mumble."""
+        enabled = bool(enabled and self._mode() == "pc")
+        if not enabled:
+            self._mumble_pc_ptt_release()
+        self.mumble_native.configure_pc_ptt(
+            enabled, self.mumble_rx_input.currentData()
+        )
+        available = bool(enabled and self.mumble_native.connected)
+        self.mumble_pc_ptt_btn.setEnabled(available)
+        self.mumble_ptt_top_btn.setEnabled(available)
+        self._configure_mumble_hotkey()
 
     def _mumble_pc_ptt_press(self):
         if self._mode() != "pc":
