@@ -4013,10 +4013,14 @@ class MainWindow(QMainWindow):
 
     def _refresh_banner(self):
         path = self._banner_path()
+        custom_configured = bool(getattr(self, "_banner_file", ""))
+        if not custom_configured and not getattr(self, "_banner_explicitly_disabled", False):
+            # Only a fallback. Never replace an existing user setting/file.
+            path = APP_DIR / "assets" / "fgwui_default_banner.png"
         valid = bool(path and path.is_file())
         image = QPixmap(str(path)) if valid else QPixmap()
         valid = valid and not image.isNull()
-        show = valid and self.banner_enabled.isChecked()
+        show = valid and (self.banner_enabled.isChecked() if custom_configured else not getattr(self, "_banner_explicitly_disabled", False))
         self.start_banner.setVisible(bool(show))
         self.start_banner.set_banner(image if show else QPixmap())
         self.banner_remove.setEnabled(bool(path and path.exists()))
@@ -6300,6 +6304,7 @@ class MainWindow(QMainWindow):
                 self.color_scheme.setCurrentIndex(pos)
             self.mode_colors.setChecked(bool(ui.get("mode_colors", True)))
             self._banner_file = str(ui.get("banner_file") or "").strip()
+            self._banner_explicitly_disabled = bool(ui.get("banner_file") and not ui.get("banner_enabled", False))
             self.banner_enabled.blockSignals(True)
             self.banner_enabled.setChecked(bool(ui.get("banner_enabled", False)))
             self.banner_enabled.blockSignals(False)
