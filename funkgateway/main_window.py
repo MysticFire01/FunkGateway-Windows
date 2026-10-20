@@ -1541,7 +1541,11 @@ class MainWindow(QMainWindow):
         lf.addRow("", self.mumble_move_btn)
         lf.addRow("", self.mumble_note)
         mf.addRow("", legacy)
-        self.mumble_tabs.addTab(mw, "Verbindung")
+        mumble_connection_scroll = QScrollArea(self.mumble_tabs)
+        mumble_connection_scroll.setWidgetResizable(True)
+        mumble_connection_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        mumble_connection_scroll.setWidget(mw)
+        self.mumble_tabs.addTab(mumble_connection_scroll, "Verbindung")
 
         # ---------------------------------------------------------- Channels
         mw = QWidget()
