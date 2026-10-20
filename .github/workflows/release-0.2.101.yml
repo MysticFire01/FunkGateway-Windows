@@ -102,39 +102,19 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --onedir --windowed --hidden-import funkgateway.updates --collect-all pymumble_py3 --hidden-import opuslib --hidden-import google.protobuf --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtWebSockets --collect-all pynput --collect-all keyring --collect-all cryptography --collect-all qrcode --collect-submodules qrcode --collect-all PIL --collect-submodules PIL --hidden-import qrcode.image.pil --add-binary "libopus-0.dll;." --add-binary "opus.dll;." --name "FunkGateway-Windows" main.py
 
-      - name: Generate German default announcements
+      - name: Bundle original Linux standard announcements
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          Add-Type -AssemblyName System.Speech
-          New-Item -ItemType Directory -Force -Path "default_wavs" | Out-Null
-          $voice = New-Object System.Speech.Synthesis.SpeechSynthesizer
-          $voice.Rate = -1
-          $slots = @(
-            @("01_rogerbeep.wav", "Roger."),
-            @("02_rufzeichenbake.wav", "Hier ist das Funk Gateway. Bitte hinterlegen Sie Ihre eigene Rufzeichenansage."),
-            @("03_papageibake.wav", "Papagei aktiv. Bitte sprechen Sie nach dem Signal."),
-            @("04_auth_erfolgreich.wav", "Authentifizierung erfolgreich."),
-            @("05_auth_erforderlich.wav", "Authentifizierung erforderlich."),
-            @("06_auth_fehlgeschlagen.wav", "Authentifizierung fehlgeschlagen."),
-            @("07_papagei_aktiv.wav", "Papagei aktiv."),
-            @("08_gateway_aktiv.wav", "Gateway Betrieb aktiv."),
-            @("09_befehl_ausgefuehrt.wav", "Befehl ausgeführt."),
-            @("10_gateway_stummgeschaltet.wav", "Gateway vorübergehend stummgeschaltet."),
-            @("11_stoerungsraum.wav", "Gateway befindet sich im Störungsraum."),
-            @("12_gateway_wieder_aktiv.wav", "Gateway wieder aktiviert."),
-            @("13_durchgang_nicht_uebertragen.wav", "Ihr Funkdurchgang konnte nicht übertragen werden. Bitte wiederholen.")
-          )
-          foreach ($slot in $slots) {
-            $path = Join-Path (Resolve-Path "default_wavs").Path $slot[0]
-            $voice.SetOutputToWaveFile($path)
-            $voice.Speak($slot[1])
-            $voice.SetOutputToNull()
-            if (!(Test-Path $path) -or (Get-Item $path).Length -lt 500) {
-              throw "Standard-WAV unvollständig: $path"
-            }
-          }
-          $voice.Dispose()
-          "Generische Testansagen; eigene WAV-Pfade werden nicht überschrieben." | Set-Content "default_wavs\ZUORDNUNG.txt"
+          New-Item -ItemType Directory -Force "linux-defaults" | Out-Null
+          gh release download "v0.6.91" --repo "MysticFire01/Funkgateway" --pattern "FunkGateway-UI-0.6.91-Generic-Linux.zip" --dir "linux-defaults"
+          Expand-Archive "linux-defaults/FunkGateway-UI-0.6.91-Generic-Linux.zip" "linux-defaults/unpacked" -Force
+          $source = "linux-defaults/unpacked/FunkGateway-UI-0.6.91-Generic-Linux/default_wavs"
+          if (!(Test-Path $source)) { throw "Linux standard WAV directory missing: $source" }
+          Copy-Item $source "default_wavs" -Recurse -Force
+          $files = @(Get-ChildItem "default_wavs" -Filter "*.wav")
+          if ($files.Count -ne 13) { throw "Expected 13 WAV files, got $($files.Count)" }
 
       - name: Validate packaged QR backend using EXE
         shell: pwsh
