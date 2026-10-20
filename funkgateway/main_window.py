@@ -40,6 +40,7 @@ from .integrations.mumble_ban_panel import MumbleBanPanel
 from .integrations.zello_panel import ZelloPanel
 from .theme import apply_theme as apply_app_theme, SCHEMES, MODE_COLORS, contrast_text
 from .helptext import build_help_html
+from .update_notes import readable_changes
 from .return_guard import ReturnGuard
 from .ptt import DryPTT, SerialPTT, SafetyPTT, serial_ports
 from .cmedia_ptt import CMediaHidPTT, compatible_devices
@@ -311,6 +312,8 @@ class MainWindow(QMainWindow):
         self._configure_mumble_hotkey()
         self._configure_dtmf()
         self._update_live_status()
+        if self.update_check_start_action.isChecked():
+            QTimer.singleShot(2500, lambda: self.check_for_updates(quiet=True))
 
     # ------------------------------------------------------------------ UI
     def _build_shell(self):
@@ -6194,7 +6197,10 @@ class MainWindow(QMainWindow):
     def _build_update_menu(self):
         menu = self.menuBar().addMenu("&Hilfe")
         action = menu.addAction("Nach Updates suchen …")
-        action.triggered.connect(self.check_for_updates)
+        action.triggered.connect(lambda: self.check_for_updates(quiet=False))
+        self.update_check_start_action = menu.addAction("Beim Programmstart nach Updates suchen")
+        self.update_check_start_action.setCheckable(True)
+        self.update_check_start_action.setChecked(True)
 
     def _run_update_worker(self, worker, done):
         if self._update_thread is not None:
@@ -6217,23 +6223,29 @@ class MainWindow(QMainWindow):
         self._update_thread = None
         self._update_worker = None
 
-    def check_for_updates(self):
+    def check_for_updates(self, quiet=False):
         self.statusBar().showMessage("Suche nach FunkGateway-Updates …")
-        self._run_update_worker(UpdateWorker("check"), self._update_check_done)
+        self._run_update_worker(UpdateWorker("check"), lambda release, asset: self._update_check_done(release, asset, quiet))
 
-    def _update_check_done(self, release, asset):
+    def _update_check_done(self, release, asset, quiet=False):
         self.statusBar().clearMessage()
         if not release or not asset:
-            QMessageBox.warning(self, "FunkGateway Update", "Kein passendes Windows-x64-ZIP gefunden.")
+            if not quiet:
+                QMessageBox.warning(self, "FunkGateway Update", "Kein passendes Windows-x64-ZIP gefunden.")
             return
         remote = str(release.get("tag_name") or "").lstrip("vV")
         if not updates.is_newer(remote, VERSION):
-            QMessageBox.information(self, "FunkGateway Update", f"Du verwendest bereits Version {VERSION}.")
+            if not quiet:
+                QMessageBox.information(self, "FunkGateway Update", f"Du verwendest bereits Version {VERSION}.")
             return
-        answer = QMessageBox.question(
-            self, "FunkGateway Update",
-            f"Version {remote} ist verfügbar.\n\nAktuell: {VERSION}\nNeu: {remote}\n\nJetzt installieren?"
-        )
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("FunkGateway – Update verfügbar")
+        dialog.setText(f"Version {remote} ist verfügbar. Installiert: {VERSION}")
+        dialog.setInformativeText("Das ist neu oder wurde verbessert:\n\n" + readable_changes(release))
+        dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        dialog.button(QMessageBox.StandardButton.Yes).setText("Jetzt aktualisieren")
+        dialog.button(QMessageBox.StandardButton.No).setText("Später")
+        answer = dialog.exec()
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.statusBar().showMessage(f"Lade FunkGateway {remote} herunter …")
@@ -6266,6 +6278,7 @@ class MainWindow(QMainWindow):
             return
         try:
             data = json.loads(CFG_FILE.read_text(encoding="utf-8"))
+            self.update_check_start_action.setChecked(bool(data.get("update_check_start", True)))
             self.frn_panel.load_config(data.get("frn", {}))
             self.zello_panel.load_config(data.get("zello", {}))
             ann=data.get("announcements",{})
@@ -6509,6 +6522,7 @@ class MainWindow(QMainWindow):
                     "output": self.voip_parrot_output.currentData(),
                 },
             },
+            "update_check_start": self.update_check_start_action.isChecked(),
             "ptt": {
                 "backend": self.gateway_ptt_backend.currentData(),
                 "port": (
