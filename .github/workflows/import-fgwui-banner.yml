@@ -1,0 +1,31 @@
+name: Import FGWUI default banner
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/import-fgwui-banner.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Copy approved original banner from Linux repo
+        run: |
+          mkdir -p funkgateway/assets
+          curl --fail --location --retry 3 --output funkgateway/assets/fgwui_default_banner.png "https://raw.githubusercontent.com/MysticFire01/Funkgateway/main/funkgateway/assets/fgwui_default_banner.png"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p = Path("funkgateway/assets/fgwui_default_banner.png")
+          assert p.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "No PNG received"
+          assert hashlib.sha1(b"blob "+str(p.stat().st_size).encode()+b"\0"+p.read_bytes()).hexdigest() == "d05f1605af9f6dbf88424902583c242c45dca12c", "Unexpected image contents"
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add funkgateway/assets/fgwui_default_banner.png
+          git diff --cached --quiet || { git commit -m "Bundle original FGWUI Sandgaleone banner for Windows"; git push; }
