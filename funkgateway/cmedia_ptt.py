@@ -61,7 +61,7 @@ class CMediaHidPTT:
         # Report ID, command, data bits, direction bits, SPDIF.
         mask = 1 << (self.gpio - 1)
         level = bool(on) != self.invert
-        packet = [0, 0, mask if level else 0, mask, 0]
+        packet = [0, 0, mask, mask if level else 0, 0]
         count = self.dev.write(packet)
         if count != len(packet):
             raise IOError("CMedia-HID: GPIO-Schaltbefehl wurde nicht vollständig angenommen.")
